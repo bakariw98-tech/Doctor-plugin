@@ -1,8 +1,14 @@
 // src/transcript.ts
-// Thin client around Supadata's transcript API (https://supadata.ai), used
-// to give the model the actual spoken content of a video — not just its
-// title/description/tags — for judging whether it really answers the
-// question, and for speaking about it accurately in the reply.
+// Thin client around Supadata's transcript API (https://supadata.ai).
+//
+// This is an OFFLINE-only tool now: the only caller is
+// scripts/fetch-transcripts.ts, run manually to build data/transcripts.json.
+// The deployed server never imports this file and never calls Supadata at
+// request time — it reads the pre-built dataset instead (see
+// src/generated/transcripts.ts and mcp-server.ts). Keeping the live app free
+// of a third-party paid-API dependency matters because it needs to pass
+// OpenAI Apps SDK review; Supadata is used to build our own data, once,
+// offline, not as a feature of the app itself.
 //
 // Deliberate limits, all about staying inside a small credit budget
 // rather than the API's actual capabilities (the account this runs
@@ -14,17 +20,15 @@
 //    flat 1 credit and stays fast, since it's just downloading captions
 //    that already exist. A video with no captions simply has no
 //    transcript here rather than paying to create one.
-// 2. Only called for a small, bounded number of videos per search (see
-//    mcp-server.ts) — never for every result in a large carousel, and
-//    never from the plain REST demo endpoint (api/search.ts), which has
-//    no agent in the loop to read a transcript anyway.
-// 3. Every outcome — a real transcript, or a confirmed "this video has
-//    none" — is cached by video ID (see below), so the same video is
-//    never paid for twice. A 206 "transcript unavailable" response still
-//    costs 1 credit per Supadata's pricing, same as a successful fetch,
-//    so caching the negative result matters just as much as caching the
-//    positive one when the same handful of popular videos keep surfacing
-//    across repeated test searches.
+// 2. Every outcome — a real transcript, or a confirmed "this video has
+//    none" — is cached by video ID (see below) for the duration of a
+//    single fetch-transcripts.ts run, so the same video is never paid for
+//    twice in one run. The real cross-run idempotency (skipping videos
+//    already in data/transcripts.json entirely) lives in
+//    fetch-transcripts.ts itself.
+// 3. A 206 "transcript unavailable" response still costs 1 credit per
+//    Supadata's pricing, same as a successful fetch, so caching the
+//    negative result matters just as much as caching the positive one.
 
 const API_BASE = "https://api.supadata.ai/v1";
 
@@ -33,6 +37,18 @@ const API_BASE = "https://api.supadata.ai/v1";
 // the description cap in youtube.ts but roomier since this is the
 // primary substrate for judging content, not a supporting snippet.
 const TRANSCRIPT_LIMIT = 3000;
+
+// The point of pulling transcripts at all: someone can ask a hyper-specific
+// question ("what did he say about how much protein to eat?") and the model
+// should be able to point to roughly where in the video that's answered —
+// "around 4:20" — not just confirm the topic is covered somewhere. So we
+// deliberately do NOT request Supadata's flat text=true mode; omitting
+// `text` returns an array of {text, offset, duration} segments (offset/
+// duration in ms) instead, which we fold into inline "[MM:SS]" markers
+// dropped into the flowing text every TIMESTAMP_INTERVAL_MS at most — sparse
+// enough not to eat the character budget above, dense enough to answer
+// "when does he talk about X."
+const TIMESTAMP_INTERVAL_MS = 20_000;
 
 // Native-caption fetches should resolve quickly, but stay defensive: cap
 // the request itself and the (unlikely, for native mode) async-job poll
@@ -61,8 +77,15 @@ function videoIdFromUrl(videoUrl: string): string {
   }
 }
 
+interface TranscriptSegment {
+  text: string;
+  offset: number;
+  duration?: number;
+  lang?: string;
+}
+
 interface SupadataTranscriptResponse {
-  content?: string;
+  content?: TranscriptSegment[];
   lang?: string;
 }
 
@@ -72,7 +95,7 @@ interface SupadataJobResponse {
 
 interface SupadataJobStatusResponse {
   status?: "queued" | "active" | "completed" | "failed";
-  content?: string;
+  content?: TranscriptSegment[];
   error?: unknown;
 }
 
@@ -80,6 +103,37 @@ function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max).trimEnd()}…`;
+}
+
+// mm:ss under an hour, h:mm:ss at or beyond — matches formatDuration's style
+// in youtube.ts.
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
+  const ss = String(seconds).padStart(2, "0");
+  return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// Flattens timed segments into one string, dropping an inline "[MM:SS]"
+// marker in front of the first segment past each TIMESTAMP_INTERVAL_MS
+// window so the result reads naturally but still carries roughly-located
+// timestamps a model can quote back.
+function formatSegments(segments: TranscriptSegment[]): string {
+  let out = "";
+  let lastMarkerOffset = -Infinity;
+  for (const segment of segments) {
+    const text = segment.text?.trim();
+    if (!text) continue;
+    if (segment.offset - lastMarkerOffset >= TIMESTAMP_INTERVAL_MS) {
+      out += `${out ? " " : ""}[${formatTimestamp(segment.offset)}] `;
+      lastMarkerOffset = segment.offset;
+    }
+    out += `${text} `;
+  }
+  return out.trim();
 }
 
 async function fetchWithTimeout(url: URL, apiKey: string): Promise<Response> {
@@ -92,7 +146,7 @@ async function fetchWithTimeout(url: URL, apiKey: string): Promise<Response> {
   }
 }
 
-async function pollJob(jobId: string, apiKey: string): Promise<string | null> {
+async function pollJob(jobId: string, apiKey: string): Promise<TranscriptSegment[] | null> {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     try {
@@ -113,17 +167,26 @@ async function pollJob(jobId: string, apiKey: string): Promise<string | null> {
 // response) gets cached; a transient failure (timeout, rate limit, server
 // error) does not, so a later call for the same video gets a fresh try
 // instead of being stuck on a bad result forever.
-interface TranscriptOutcome {
+export interface TranscriptOutcome {
   transcript: string | null;
   definitive: boolean;
+  // Specifically "we've hit the account's rate/usage limit," distinct from
+  // an ordinary transient failure — a caller fetching many videos in a
+  // loop should treat this as "stop now," not "skip this one and keep
+  // going," since every remaining request will fail the same way until
+  // the limit resets.
+  rateLimited?: boolean;
 }
 
 async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promise<TranscriptOutcome> {
   try {
     const url = new URL(`${API_BASE}/transcript`);
     url.searchParams.set("url", videoUrl);
-    url.searchParams.set("text", "true");
     url.searchParams.set("mode", "native");
+    // No `text=true` — deliberately requesting the segmented
+    // {text, offset, duration}[] shape (see TIMESTAMP_INTERVAL_MS above)
+    // instead of one flat string, so timestamps survive into the stored
+    // transcript.
 
     const res = await fetchWithTimeout(url, apiKey);
 
@@ -132,66 +195,60 @@ async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promis
     if (res.status === 404 || res.status === 403) {
       return { transcript: null, definitive: true };
     }
-    // Anything else non-OK (rate limited, server error, ...) is worth
-    // retrying later rather than remembering as "no transcript" forever.
+    // The account's rate/usage limit — a distinct, detectable case, not
+    // just "some other non-OK status." Never cache or treat as "no
+    // transcript"; a bulk caller should stop entirely rather than burn
+    // through the rest of its list hitting the same wall.
+    if (res.status === 429) {
+      return { transcript: null, definitive: false, rateLimited: true };
+    }
+    // Anything else non-OK (server error, ...) is worth retrying later
+    // rather than remembering as "no transcript" forever.
     if (!res.ok) {
       return { transcript: null, definitive: false };
     }
 
     const data = (await res.json()) as SupadataTranscriptResponse & SupadataJobResponse;
     if (data.jobId) {
-      const content = await pollJob(data.jobId, apiKey);
+      const segments = await pollJob(data.jobId, apiKey);
       // A poll that ran out of attempts without resolving is ambiguous,
       // not a confirmed "no transcript" — don't cache that as permanent.
-      return { transcript: content ? truncate(content, TRANSCRIPT_LIMIT) : null, definitive: content !== null };
+      return {
+        transcript: segments?.length ? truncate(formatSegments(segments), TRANSCRIPT_LIMIT) : null,
+        definitive: segments !== null,
+      };
     }
 
     // A 200 with empty/missing content is Supadata's real "no native
     // transcript for this video" answer (their 206 case) — definitive,
     // and still billed, so it's exactly the case worth caching.
-    return { transcript: data.content ? truncate(data.content, TRANSCRIPT_LIMIT) : null, definitive: true };
+    return {
+      transcript: data.content?.length ? truncate(formatSegments(data.content), TRANSCRIPT_LIMIT) : null,
+      definitive: true,
+    };
   } catch {
     return { transcript: null, definitive: false };
   }
 }
 
 /**
- * Fetches the native-caption transcript for one video, or `null` if none
- * exists, the video isn't accessible, or the request didn't resolve in
- * time. Never throws — every failure mode here is "no transcript for this
- * video," not a reason to fail the whole search. Cached by video ID (see
- * the module-level `cache` above) so a video already checked this process
- * is never paid for again.
+ * Fetches the native-caption transcript for one video. Never throws — every
+ * failure mode here comes back as `transcript: null`, not an exception.
+ * Callers MUST check `definitive` before treating a null transcript as
+ * permanent: `false` means the request didn't resolve one way or the other
+ * (timeout, server error, or — flagged separately via `rateLimited` — the
+ * account's usage limit), so it should be retried later, not recorded as
+ * "this video has no transcript." Cached by video ID (see the module-level
+ * `cache` above) only when `definitive` is true, so a video already
+ * confirmed one way or the other this process is never paid for again,
+ * while an unresolved one gets a fresh try on the next call.
  */
-export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<string | null> {
+export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<TranscriptOutcome> {
   const id = videoIdFromUrl(videoUrl);
   const cached = cache.get(id);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { transcript: cached, definitive: true };
 
   const outcome = await fetchTranscriptUncached(videoUrl, apiKey);
   if (outcome.definitive) cache.set(id, outcome.transcript);
-  return outcome.transcript;
-}
-
-/**
- * Fetches transcripts for several videos in parallel. Returns a Map from
- * videoUrl to transcript text; a video with no entry means no transcript
- * was available (not an error — the caller just has less to work with for
- * that one).
- */
-export async function fetchTranscripts(
-  videoUrls: string[],
-  apiKey: string,
-): Promise<Map<string, string>> {
-  const results = await Promise.allSettled(
-    videoUrls.map(async (url) => [url, await fetchTranscript(url, apiKey)] as const),
-  );
-
-  const transcripts = new Map<string, string>();
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value[1]) {
-      transcripts.set(result.value[0], result.value[1]);
-    }
-  }
-  return transcripts;
+  return outcome;
 }
