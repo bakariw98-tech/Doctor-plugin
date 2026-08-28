@@ -17,10 +17,9 @@ export interface VideoResult {
   // model's own reasoning about which video actually fits the question,
   // beyond what YouTube's keyword search ranking surfaced.
   tags?: string[];
-  // Set by mcp-server.ts after this module returns, for the top few
-  // results only, when SUPADATA_API_KEY is configured — see
-  // src/transcript.ts. Not fetched here since this module only knows
-  // about the YouTube Data API.
+  // Looked up from a pre-built local dataset (src/generated/transcripts.ts,
+  // produced offline by scripts/fetch-transcripts.ts) — never fetched live
+  // by the running server. See that script for why.
   transcript?: string;
 }
 
@@ -28,15 +27,17 @@ interface YoutubeThumbnail {
   url: string;
 }
 
-interface YoutubeSearchItem {
-  id: { videoId?: string };
-  snippet: {
-    title: string;
-    description: string;
-    publishedAt: string;
-    channelTitle: string;
-    thumbnails: Record<string, YoutubeThumbnail>;
-  };
+interface YoutubeSnippet {
+  title: string;
+  description: string;
+  publishedAt: string;
+  channelTitle: string;
+  thumbnails: Record<string, YoutubeThumbnail>;
+}
+
+interface YoutubeItem {
+  videoId: string;
+  snippet: YoutubeSnippet;
 }
 
 // search.list's snippet.description is truncated to ~100-150 chars with a
@@ -57,6 +58,15 @@ const DESCRIPTION_LIMIT = 600;
 const MAX_TAGS = 20;
 
 let resolvedChannelId: string | null = null;
+let resolvedUploadsPlaylistId: string | null = null;
+
+function requireApiKey(): string {
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("Set YOUTUBE_API_KEY in the environment (see .env.example).");
+  }
+  return apiKey;
+}
 
 // The channel can be configured either as a raw channel ID (starts with
 // "UC...") or as a public @handle, which is easier to find but needs one
@@ -94,6 +104,34 @@ async function resolveChannelId(apiKey: string): Promise<string> {
   }
   resolvedChannelId = id;
   return id;
+}
+
+// Every channel has one "uploads" playlist containing all its public
+// videos in upload order — the cheap (1 quota unit/page), reliable way to
+// enumerate a channel's catalog, as opposed to search.list (100 units,
+// and scoped to a query rather than "everything").
+async function resolveUploadsPlaylistId(apiKey: string): Promise<string> {
+  if (resolvedUploadsPlaylistId) return resolvedUploadsPlaylistId;
+
+  const channelId = await resolveChannelId(apiKey);
+  const url = new URL(`${API_BASE}/channels`);
+  url.searchParams.set("part", "contentDetails");
+  url.searchParams.set("id", channelId);
+  url.searchParams.set("key", apiKey);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to resolve uploads playlist: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as {
+    items?: { contentDetails?: { relatedPlaylists?: { uploads?: string } } }[];
+  };
+  const uploads = data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) {
+    throw new Error("Could not resolve the channel's uploads playlist.");
+  }
+  resolvedUploadsPlaylistId = uploads;
+  return uploads;
 }
 
 // Converts an ISO-8601 duration like "PT1H2M3S" into "1:02:03".
@@ -158,15 +196,35 @@ async function fetchVideoDetails(
   return details;
 }
 
+function buildVideoResult(item: YoutubeItem, details: Map<string, YoutubeVideoDetails>): VideoResult {
+  const thumbnails = item.snippet.thumbnails ?? {};
+  const thumbnail =
+    // medium (mqdefault, 320x180) is natively 16:9; high (hqdefault) is
+    // 480x360 letterboxed with black bars, which object-fit: cover was
+    // cropping into rather than showing clean.
+    thumbnails.medium?.url ?? thumbnails.high?.url ?? thumbnails.default?.url ?? "";
+
+  const detail = details.get(item.videoId);
+  const fullDescription = detail?.description ?? item.snippet.description;
+
+  return {
+    videoId: item.videoId,
+    title: item.snippet.title,
+    description: truncate(fullDescription, DESCRIPTION_LIMIT),
+    thumbnail,
+    publishedAt: item.snippet.publishedAt,
+    url: `https://www.youtube.com/watch?v=${item.videoId}`,
+    duration: detail?.duration,
+    channelTitle: item.snippet.channelTitle,
+    tags: detail?.tags?.slice(0, MAX_TAGS),
+  };
+}
+
 export async function searchChannelVideos(
   query: string,
   maxResults = 8,
 ): Promise<VideoResult[]> {
-  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("Set YOUTUBE_API_KEY in the environment (see .env.example).");
-  }
-
+  const apiKey = requireApiKey();
   const channelId = await resolveChannelId(apiKey);
   const clampedMax = Math.min(Math.max(maxResults, 1), 20);
 
@@ -183,36 +241,66 @@ export async function searchChannelVideos(
   if (!searchRes.ok) {
     throw new Error(`YouTube search failed: ${searchRes.status} ${await searchRes.text()}`);
   }
-  const searchData = (await searchRes.json()) as { items?: YoutubeSearchItem[] };
-  const items = (searchData.items ?? []).filter((item) => item.id.videoId);
+  const searchData = (await searchRes.json()) as {
+    items?: { id: { videoId?: string }; snippet: YoutubeSnippet }[];
+  };
+  const items: YoutubeItem[] = (searchData.items ?? [])
+    .filter((item) => item.id.videoId)
+    .map((item) => ({ videoId: item.id.videoId as string, snippet: item.snippet }));
 
   if (items.length === 0) return [];
 
-  const videoIds = items.map((item) => item.id.videoId as string);
-  const details = await fetchVideoDetails(videoIds, apiKey);
+  const details = await fetchVideoDetails(
+    items.map((item) => item.videoId),
+    apiKey,
+  );
+  return items.map((item) => buildVideoResult(item, details));
+}
 
-  return items.map((item) => {
-    const videoId = item.id.videoId as string;
-    const thumbnails = item.snippet.thumbnails ?? {};
-    const thumbnail =
-      // medium (mqdefault, 320x180) is natively 16:9; high (hqdefault) is
-      // 480x360 letterboxed with black bars, which object-fit: cover was
-      // cropping into rather than showing clean.
-      thumbnails.medium?.url ?? thumbnails.high?.url ?? thumbnails.default?.url ?? "";
+/**
+ * Enumerates the channel's own upload catalog directly (via its uploads
+ * playlist), most recent first — not a keyword search. This is what the
+ * offline transcript-fetching script (scripts/fetch-transcripts.ts) uses
+ * to build the pool of videos it pulls transcripts for; the running
+ * server never calls this at request time.
+ */
+export async function listChannelVideos(limit = 100): Promise<VideoResult[]> {
+  const apiKey = requireApiKey();
+  const playlistId = await resolveUploadsPlaylistId(apiKey);
 
-    const detail = details.get(videoId);
-    const fullDescription = detail?.description ?? item.snippet.description;
+  const items: YoutubeItem[] = [];
+  let pageToken: string | undefined;
 
-    return {
-      videoId,
-      title: item.snippet.title,
-      description: truncate(fullDescription, DESCRIPTION_LIMIT),
-      thumbnail,
-      publishedAt: item.snippet.publishedAt,
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      duration: detail?.duration,
-      channelTitle: item.snippet.channelTitle,
-      tags: detail?.tags?.slice(0, MAX_TAGS),
+  while (items.length < limit) {
+    const url = new URL(`${API_BASE}/playlistItems`);
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("playlistId", playlistId);
+    url.searchParams.set("maxResults", String(Math.min(50, limit - items.length)));
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    url.searchParams.set("key", apiKey);
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to list channel uploads: ${res.status} ${await res.text()}`);
+    }
+    const data = (await res.json()) as {
+      items?: { snippet: YoutubeSnippet & { resourceId: { videoId: string } } }[];
+      nextPageToken?: string;
     };
-  });
+    for (const item of data.items ?? []) {
+      items.push({ videoId: item.snippet.resourceId.videoId, snippet: item.snippet });
+    }
+
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  const capped = items.slice(0, limit);
+  if (capped.length === 0) return [];
+
+  const details = await fetchVideoDetails(
+    capped.map((item) => item.videoId),
+    apiKey,
+  );
+  return capped.map((item) => buildVideoResult(item, details));
 }

@@ -10,14 +10,9 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { searchChannelVideos } from "./youtube.js";
-import { fetchTranscripts } from "./transcript.js";
 import { resolveView } from "./view.js";
 import { WIDGET_HTML } from "./generated/widget-html.js";
-
-// Transcripts are fetched for at most this many results per search — the
-// model realistically only leads with a few, and each is a real API call
-// (see src/transcript.ts for the cost/latency reasoning).
-const TRANSCRIPT_CANDIDATE_LIMIT = 3;
+import { TRANSCRIPTS } from "./generated/transcripts.js";
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
@@ -44,10 +39,11 @@ export function createMcpServer(): McpServer {
           "right words in passing over one that's actually about the topic, or miss one that's " +
           "conceptually relevant but phrased differently. If the closest keyword match doesn't really " +
           "fit, say so and point to whichever one does, rather than defaulting to result order. When " +
-          "a transcript is present (only fetched for the top few results, and only when the video has " +
-          "existing captions — not every result will have one), it's the actual spoken content and is " +
-          "far more reliable for judging fit than the description or title; prefer it when deciding " +
-          "which video to recommend and when describing what a video actually covers. The " +
+          "a transcript is present (from a pre-built local dataset covering the channel's recent " +
+          "uploads — not every video has one, and very new videos may not be in it yet), it's the " +
+          "actual spoken content and is far more reliable for judging fit than the description or " +
+          "title; prefer it when deciding which video to recommend and when describing what a video " +
+          "actually covers. The " +
           "rendered widget shows thumbnails only — no titles, dates, or descriptions are drawn on " +
           "screen. So after calling this, speak the results yourself in your reply using what you " +
           "read: say which one you'd start with and why, and note runtime when it's relevant to " +
@@ -89,21 +85,14 @@ export function createMcpServer(): McpServer {
         const videos = await searchChannelVideos(query, maxResults ?? 8);
         const resolvedView = resolveView(view, videos.length);
 
-        // Transcripts are optional — SUPADATA_API_KEY may not be
-        // configured, and a fetch failure per video is already handled
-        // inside fetchTranscripts (a missing entry just means no
-        // transcript, not an error). Only the top few candidates get one.
-        const supadataKey = process.env.SUPADATA_API_KEY?.trim();
-        if (supadataKey && videos.length > 0) {
-          const candidates = videos.slice(0, TRANSCRIPT_CANDIDATE_LIMIT);
-          const transcripts = await fetchTranscripts(
-            candidates.map((v) => v.url),
-            supadataKey,
-          );
-          for (const video of candidates) {
-            const transcript = transcripts.get(video.url);
-            if (transcript) video.transcript = transcript;
-          }
+        // Local lookup only — no network call, no Supadata dependency at
+        // request time. TRANSCRIPTS is a pre-built dataset embedded at
+        // build time (see scripts/fetch-transcripts.ts and
+        // scripts/embed-transcripts.mjs); a video not in it just has no
+        // transcript, same as any other optional field.
+        for (const video of videos) {
+          const transcript = TRANSCRIPTS[video.videoId];
+          if (transcript) video.transcript = transcript;
         }
 
         return {

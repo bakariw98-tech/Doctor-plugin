@@ -1,8 +1,14 @@
 // src/transcript.ts
-// Thin client around Supadata's transcript API (https://supadata.ai), used
-// to give the model the actual spoken content of a video — not just its
-// title/description/tags — for judging whether it really answers the
-// question, and for speaking about it accurately in the reply.
+// Thin client around Supadata's transcript API (https://supadata.ai).
+//
+// This is an OFFLINE-only tool now: the only caller is
+// scripts/fetch-transcripts.ts, run manually to build data/transcripts.json.
+// The deployed server never imports this file and never calls Supadata at
+// request time — it reads the pre-built dataset instead (see
+// src/generated/transcripts.ts and mcp-server.ts). Keeping the live app free
+// of a third-party paid-API dependency matters because it needs to pass
+// OpenAI Apps SDK review; Supadata is used to build our own data, once,
+// offline, not as a feature of the app itself.
 //
 // Deliberate limits, all about staying inside a small credit budget
 // rather than the API's actual capabilities (the account this runs
@@ -14,17 +20,15 @@
 //    flat 1 credit and stays fast, since it's just downloading captions
 //    that already exist. A video with no captions simply has no
 //    transcript here rather than paying to create one.
-// 2. Only called for a small, bounded number of videos per search (see
-//    mcp-server.ts) — never for every result in a large carousel, and
-//    never from the plain REST demo endpoint (api/search.ts), which has
-//    no agent in the loop to read a transcript anyway.
-// 3. Every outcome — a real transcript, or a confirmed "this video has
-//    none" — is cached by video ID (see below), so the same video is
-//    never paid for twice. A 206 "transcript unavailable" response still
-//    costs 1 credit per Supadata's pricing, same as a successful fetch,
-//    so caching the negative result matters just as much as caching the
-//    positive one when the same handful of popular videos keep surfacing
-//    across repeated test searches.
+// 2. Every outcome — a real transcript, or a confirmed "this video has
+//    none" — is cached by video ID (see below) for the duration of a
+//    single fetch-transcripts.ts run, so the same video is never paid for
+//    twice in one run. The real cross-run idempotency (skipping videos
+//    already in data/transcripts.json entirely) lives in
+//    fetch-transcripts.ts itself.
+// 3. A 206 "transcript unavailable" response still costs 1 credit per
+//    Supadata's pricing, same as a successful fetch, so caching the
+//    negative result matters just as much as caching the positive one.
 
 const API_BASE = "https://api.supadata.ai/v1";
 

@@ -7,10 +7,11 @@
   "scripts": {
     "build:app": "INPUT=mcp-app.html OUTDIR=dist vite build",
     "build:demo": "INPUT=index.html OUTDIR=public vite build",
-    "build": "npm run build:app && npm run build:demo && node scripts/embed-widget.mjs",
+    "build": "npm run build:app && npm run build:demo && node scripts/embed-widget.mjs && node scripts/embed-transcripts.mjs",
     "serve": "npx tsx server.ts",
     "start": "npm run build && npm run serve",
-    "dev": "npm run build && npm run serve"
+    "dev": "npm run build && npm run serve",
+    "fetch-transcripts": "tsx --env-file=.env scripts/fetch-transcripts.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
