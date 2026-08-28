@@ -9,7 +9,7 @@ import {
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import { searchChannelVideos } from "./youtube.js";
+import { searchChannelVideos, type VideoResult } from "./youtube.js";
 import { resolveView } from "./view.js";
 import { WIDGET_HTML } from "./generated/widget-html.js";
 import { TRANSCRIPTS } from "./generated/transcripts.js";
@@ -17,6 +17,38 @@ import { TRANSCRIPTS } from "./generated/transcripts.js";
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
 export const RESOURCE_URI = "ui://search-doctor-videos/mcp-app.html";
+
+// Some MCP hosts only feed the model this tool's `content` text — the
+// structured `structuredContent.videos` (full description, tags,
+// transcript) is delivered to the widget's iframe, not necessarily back
+// into the model's own context. So the actual reasoning material has to
+// live here too, or the model is answering blind: it'll see thumbnails on
+// screen but have no idea what's actually in them. Confirmed live against
+// Claude's web connector, which never saw a transcript that was only in
+// structuredContent.
+function buildResultText(query: string, videos: VideoResult[]): string {
+  if (videos.length === 0) {
+    return `No videos found about "${query}" on this channel. Try a different search term.`;
+  }
+
+  const entries = videos.map((v) => {
+    const lines = [`"${v.title}" (${v.duration ?? "?"}, published ${v.publishedAt.slice(0, 10)})`];
+    if (v.description) lines.push(`Description: ${v.description}`);
+    if (v.tags?.length) lines.push(`Tags: ${v.tags.join(", ")}`);
+    lines.push(
+      v.transcript
+        ? `Transcript (has '[MM:SS]' markers roughly every 20s — cite the nearest one when the ` +
+            `answer is specific): ${v.transcript}`
+        : "Transcript: not available for this video.",
+    );
+    return lines.join("\n");
+  });
+
+  return (
+    `${videos.length} video${videos.length === 1 ? "" : "s"} about "${query}":\n\n` +
+    entries.join("\n\n---\n\n")
+  );
+}
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -101,15 +133,7 @@ export function createMcpServer(): McpServer {
         }
 
         return {
-          content: [
-            {
-              type: "text",
-              text: videos.length
-                ? `${videos.length} video${videos.length === 1 ? "" : "s"} about "${query}": ` +
-                  videos.map((v) => `"${v.title}" (${v.duration ?? "?"})`).join("; ") + "."
-                : `No videos found about "${query}" on this channel. Try a different search term.`,
-            },
-          ],
+          content: [{ type: "text", text: buildResultText(query, videos) }],
           structuredContent: { query, view: resolvedView, videos },
         };
       } catch (err) {
