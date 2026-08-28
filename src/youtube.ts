@@ -13,6 +13,10 @@ export interface VideoResult {
   url: string;
   duration?: string;
   channelTitle: string;
+  // Not rendered by the widget (thumbnails only) — this is signal for the
+  // model's own reasoning about which video actually fits the question,
+  // beyond what YouTube's keyword search ranking surfaced.
+  tags?: string[];
 }
 
 interface YoutubeThumbnail {
@@ -29,6 +33,23 @@ interface YoutubeSearchItem {
     thumbnails: Record<string, YoutubeThumbnail>;
   };
 }
+
+// search.list's snippet.description is truncated to ~100-150 chars with a
+// trailing "...". videos.list's snippet.description is the full thing (we
+// saw one run 1,300+ chars, plus up to ~40 tags) — that's the real
+// substrate for semantic matching, so every result gets a second-pass
+// lookup here rather than trusting the truncated search snippet.
+interface YoutubeVideoDetails {
+  duration?: string;
+  description?: string;
+  tags?: string[];
+}
+
+// Descriptions can run long (sponsor links, disclaimers, hashtags). Full
+// text is still fetched — capping only what's handed to the model keeps
+// payloads bounded without losing the topic-relevant opening.
+const DESCRIPTION_LIMIT = 600;
+const MAX_TAGS = 20;
 
 let resolvedChannelId: string | null = null;
 
@@ -83,6 +104,55 @@ function formatDuration(iso: string): string {
   return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+function truncate(text: string, max: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max).trimEnd()}…`;
+}
+
+// Batches videos.list lookups (id accepts up to 50 comma-separated) to
+// pull duration plus the full snippet (untruncated description, tags) for
+// a set of video IDs. Best-effort: a failed batch just leaves those videos
+// without the extra detail rather than failing the whole search.
+async function fetchVideoDetails(
+  videoIds: string[],
+  apiKey: string,
+): Promise<Map<string, YoutubeVideoDetails>> {
+  const details = new Map<string, YoutubeVideoDetails>();
+
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const detailsUrl = new URL(`${API_BASE}/videos`);
+      detailsUrl.searchParams.set("part", "snippet,contentDetails");
+      detailsUrl.searchParams.set("id", batch.join(","));
+      detailsUrl.searchParams.set("key", apiKey);
+      const res = await fetch(detailsUrl);
+      if (!res.ok) continue;
+
+      const data = (await res.json()) as {
+        items?: {
+          id: string;
+          snippet?: { description?: string; tags?: string[] };
+          contentDetails?: { duration?: string };
+        }[];
+      };
+      for (const item of data.items ?? []) {
+        details.set(item.id, {
+          duration: item.contentDetails?.duration ? formatDuration(item.contentDetails.duration) : undefined,
+          description: item.snippet?.description,
+          tags: item.snippet?.tags,
+        });
+      }
+    } catch {
+      // Non-fatal — the search snippet's truncated description/no tags is
+      // still a usable fallback for this batch.
+    }
+  }
+
+  return details;
+}
+
 export async function searchChannelVideos(
   query: string,
   maxResults = 8,
@@ -114,29 +184,7 @@ export async function searchChannelVideos(
   if (items.length === 0) return [];
 
   const videoIds = items.map((item) => item.id.videoId as string);
-
-  // A second call fetches duration, which search.list doesn't return.
-  // Best-effort: if it fails, we still show results without durations.
-  const durations = new Map<string, string>();
-  try {
-    const detailsUrl = new URL(`${API_BASE}/videos`);
-    detailsUrl.searchParams.set("part", "contentDetails");
-    detailsUrl.searchParams.set("id", videoIds.join(","));
-    detailsUrl.searchParams.set("key", apiKey);
-    const detailsRes = await fetch(detailsUrl);
-    if (detailsRes.ok) {
-      const detailsData = (await detailsRes.json()) as {
-        items?: { id: string; contentDetails?: { duration?: string } }[];
-      };
-      for (const item of detailsData.items ?? []) {
-        if (item.contentDetails?.duration) {
-          durations.set(item.id, formatDuration(item.contentDetails.duration));
-        }
-      }
-    }
-  } catch {
-    // Non-fatal — durations are a nice-to-have.
-  }
+  const details = await fetchVideoDetails(videoIds, apiKey);
 
   return items.map((item) => {
     const videoId = item.id.videoId as string;
@@ -147,15 +195,19 @@ export async function searchChannelVideos(
       // cropping into rather than showing clean.
       thumbnails.medium?.url ?? thumbnails.high?.url ?? thumbnails.default?.url ?? "";
 
+    const detail = details.get(videoId);
+    const fullDescription = detail?.description ?? item.snippet.description;
+
     return {
       videoId,
       title: item.snippet.title,
-      description: item.snippet.description,
+      description: truncate(fullDescription, DESCRIPTION_LIMIT),
       thumbnail,
       publishedAt: item.snippet.publishedAt,
       url: `https://www.youtube.com/watch?v=${videoId}`,
-      duration: durations.get(videoId),
+      duration: detail?.duration,
       channelTitle: item.snippet.channelTitle,
+      tags: detail?.tags?.slice(0, MAX_TAGS),
     };
   });
 }

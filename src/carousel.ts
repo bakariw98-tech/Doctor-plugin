@@ -25,6 +25,10 @@ export interface VideoResult {
   url: string;
   duration?: string;
   channelTitle: string;
+  // Not read by this file — the widget draws thumbnails only. Carried in
+  // the type because it flows through the same structuredContent the
+  // model reasons over (src/mcp-server.ts).
+  tags?: string[];
 }
 
 export function escapeHtml(input: string): string {
