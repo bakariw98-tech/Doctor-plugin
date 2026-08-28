@@ -5,7 +5,9 @@
   "type": "module",
   "description": "MCP App that searches a doctor's YouTube channel and renders results as a playable video carousel inside the chat.",
   "scripts": {
-    "build": "INPUT=mcp-app.html vite build",
+    "build:app": "INPUT=mcp-app.html OUTDIR=dist vite build",
+    "build:demo": "INPUT=index.html OUTDIR=public vite build",
+    "build": "npm run build:app && npm run build:demo && node scripts/embed-widget.mjs",
     "serve": "npx tsx server.ts",
     "start": "npm run build && npm run serve",
     "dev": "npm run build && npm run serve"
@@ -21,6 +23,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.10",
+    "@vercel/node": "^3.2.1",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "vite": "^5.4.0",

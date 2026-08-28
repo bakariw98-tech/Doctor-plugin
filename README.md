@@ -12,18 +12,33 @@ MCP-Apps-capable host (Claude, ChatGPT, etc.).
 
 ## How it works
 
-- **`server.ts`** — an MCP server (TypeScript SDK) exposing one tool,
+- **`src/mcp-server.ts`** — builds the MCP server: one tool,
   `search_doctor_videos`, which calls the YouTube Data API v3 scoped to a
   single configured channel and returns the results as `structuredContent`.
   The tool is linked to a UI resource via `_meta.ui.resourceUri` (and the
   `openai/outputTemplate` alias, for ChatGPT's Apps SDK).
-- **`mcp-app.html` / `src/mcp-app.ts`** — the carousel widget. It reads the
-  tool's structured output, renders one card per video, and swaps a card's
-  thumbnail for a live YouTube `<iframe>` embed on click. It also has its
-  own search box that calls the tool again directly from the widget.
+- **`server.ts`** — local dev entry point: Express serving `/mcp`,
+  `/api/search`, and the static demo page from one process.
+- **`api/mcp.ts`** / **`api/search.ts`** — the same two endpoints as Vercel
+  serverless functions, used in production.
+- **`mcp-app.html` / `src/mcp-app.ts`** — the carousel widget that renders
+  inside a chat host. Reads the tool's structured output via the MCP Apps
+  bridge, renders one card per video, and swaps a card's thumbnail for a
+  live YouTube `<iframe>` embed on click.
+- **`index.html` / `src/demo.ts`** — a standalone browser demo of the same
+  carousel (talking to `/api/search` instead of the MCP bridge), built to
+  `public/index.html` and deployed at the site root so it's testable
+  without a chat client.
+- **`src/carousel.ts`** — the rendering logic shared by the widget and the
+  demo page, so what you see in the browser preview matches what renders
+  in chat.
 - **`src/youtube.ts`** — the YouTube Data API client: resolves the
   configured channel, runs `search.list` scoped to it, and enriches results
   with duration via `videos.list`.
+- **`scripts/embed-widget.mjs`** — inlines the built `dist/mcp-app.html`
+  into `src/generated/widget-html.ts` so the server can import it directly
+  (a plain `fs.readFile` at request time isn't reliable in a serverless
+  bundle).
 
 ## Setup
 
@@ -52,31 +67,48 @@ cp .env.example .env
 
 ```bash
 npm install
-npm run build   # bundles the widget into dist/mcp-app.html
-npm run serve   # starts the MCP server on http://localhost:3001/mcp
+npm run build   # bundles the widget (dist/) and demo page (public/)
+npm run serve   # starts the server: /mcp, /api/search, and the demo page
 ```
 
-(`npm run dev` does both in one step.)
+(`npm run dev` does both in one step.) Open `http://localhost:3001/` for the
+browser demo, or point a chat client at `http://localhost:3001/mcp`.
 
-## Testing it
+## Deploying to Vercel
+
+The repo deploys as-is (`vercel.json` wires the build + serverless
+functions): `npm run build` runs as the Vercel build command,
+`public/index.html` becomes the site root, and `api/mcp.ts` / `api/search.ts`
+become serverless functions at `/api/mcp` (also reachable at `/mcp`) and
+`/api/search`.
+
+**Environment variables are per-platform** — GitHub repo secrets are not
+visible to Vercel. Set `YOUTUBE_API_KEY` and either `YOUTUBE_CHANNEL_ID` or
+`YOUTUBE_CHANNEL_HANDLE` under the Vercel project's **Settings → Environment
+Variables**, then redeploy.
+
+Once deployed:
+
+- Visit the deployment URL for the live browser demo (search + inline
+  playback, no chat client needed).
+- Use `https://<your-deployment>.vercel.app/mcp` as the connector URL in
+  Claude or ChatGPT developer mode.
+
+## Testing it in a chat client
 
 MCP Apps need a host that understands the UI extension. Two easy options:
 
-**Claude (web/desktop):** tunnel your local server, e.g.
-
-```bash
-npx cloudflared tunnel --url http://localhost:3001
-```
-
-then add the printed `https://...trycloudflare.com` URL as a
+**Claude (web/desktop):** add your Vercel deployment's `/mcp` URL (or a
+tunneled local server, e.g. `npx cloudflared tunnel --url http://localhost:3001`)
+as a
 [custom connector](https://support.anthropic.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)
-in Claude (Settings → Connectors → Add custom connector — append `/mcp` to
-the tunnel URL). Ask Claude to search the channel for a topic.
+in Claude (Settings → Connectors → Add custom connector). Ask Claude to
+search the channel for a topic.
 
-**ChatGPT (developer mode):** enable developer mode, add the same tunnel URL
-as a connector, and ask about a topic covered on the channel — ChatGPT will
-call `search_doctor_videos` and render the carousel via the
-`openai/outputTemplate` link.
+**ChatGPT (developer mode):** enable developer mode, add the same URL as a
+connector, and ask about a topic covered on the channel — ChatGPT will call
+`search_doctor_videos` and render the carousel via the `openai/outputTemplate`
+link.
 
 **Local basic-host:** the
 [`ext-apps`](https://github.com/modelcontextprotocol/ext-apps) repo ships a
