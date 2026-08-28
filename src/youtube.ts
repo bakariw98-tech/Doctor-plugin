@@ -142,7 +142,10 @@ export async function searchChannelVideos(
     const videoId = item.id.videoId as string;
     const thumbnails = item.snippet.thumbnails ?? {};
     const thumbnail =
-      thumbnails.high?.url ?? thumbnails.medium?.url ?? thumbnails.default?.url ?? "";
+      // medium (mqdefault, 320x180) is natively 16:9; high (hqdefault) is
+      // 480x360 letterboxed with black bars, which object-fit: cover was
+      // cropping into rather than showing clean.
+      thumbnails.medium?.url ?? thumbnails.high?.url ?? thumbnails.default?.url ?? "";
 
     return {
       videoId,

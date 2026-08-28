@@ -1,6 +1,10 @@
 // src/mcp-app.ts
 // UI logic for the video results widget. Runs inside the sandboxed iframe
 // the MCP host renders, and talks back to the server via the App bridge.
+//
+// No search box here: the chat is the search box. The person already
+// asked; a second field in the widget would just make them retype it.
+// Refining a search happens by talking to the agent again.
 import { App } from "@modelcontextprotocol/ext-apps";
 import { renderVideos, type VideoResult, type ViewMode } from "./carousel";
 import { resolveView } from "./view";
@@ -12,9 +16,6 @@ interface ToolPayload {
 }
 
 const root = document.getElementById("root")!;
-const searchForm = document.getElementById("search-form") as HTMLFormElement;
-const searchInput = document.getElementById("search-input") as HTMLInputElement;
-const searchButton = document.getElementById("search-button") as HTMLButtonElement;
 const statusEl = document.getElementById("status")!;
 const fullscreenBar = document.getElementById("fullscreen-bar")!;
 const fullscreenToggle = document.getElementById("fullscreen-toggle") as HTMLButtonElement;
@@ -26,7 +27,7 @@ let currentVideos: VideoResult[] = [];
 let currentView: ViewMode = "carousel";
 // Only true once we've actually switched to the fullscreen-only "grid"
 // layout via requestDisplayMode — lets us tell "grid because we asked for
-// fullscreen" apart from "grid because the tool/demo forced it directly".
+// fullscreen" apart from "grid because the tool forced it directly".
 let inFullscreen = false;
 
 // Fullscreen is a request, not a guarantee — only offer it when the host
@@ -62,9 +63,12 @@ function applyPayload(payload: ToolPayload | undefined | null) {
   currentVideos = payload.videos ?? [];
   currentView = payload.view ?? "carousel";
   inFullscreen = false;
+  // Visually silent — the agent's own reply carries the words. This is
+  // only for screen readers, which have no other way to know results
+  // loaded (there's no visible status line to announce it for them).
   statusEl.textContent = currentVideos.length
-    ? `${currentVideos.length} video${currentVideos.length === 1 ? "" : "s"} for "${payload.query}"`
-    : `No videos found for "${payload.query}".`;
+    ? `${currentVideos.length} video${currentVideos.length === 1 ? "" : "s"} loaded.`
+    : "No videos found.";
   render();
 }
 
@@ -103,27 +107,5 @@ app.addEventListener("hostcontextchanged", () => {
 app.ontoolresult = (result) => {
   applyPayload(result.structuredContent as ToolPayload | undefined);
 };
-
-// Lets people refine the search from inside the widget itself, without
-// going back to the chat, by calling the same server tool again.
-searchForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const query = searchInput.value.trim();
-  if (!query) return;
-
-  searchButton.disabled = true;
-  statusEl.textContent = "Searching…";
-  try {
-    const result = await app.callServerTool({
-      name: "search_doctor_videos",
-      arguments: { query },
-    });
-    applyPayload(result.structuredContent as ToolPayload | undefined);
-  } catch {
-    statusEl.textContent = "Search failed. Please try again.";
-  } finally {
-    searchButton.disabled = false;
-  }
-});
 
 render();

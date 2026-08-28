@@ -29,7 +29,13 @@ export function createMcpServer(): McpServer {
     {
       title: "Search Doctor Videos",
       description:
-        "Searches the configured doctor's YouTube channel for videos matching a symptom, topic, or question, and renders the matches as a playable video carousel.",
+        "Searches the configured doctor's YouTube channel for videos matching a symptom, topic, or " +
+          "question. The rendered widget shows thumbnails only — no titles, dates, or descriptions are " +
+          "drawn on screen. So after calling this, speak the results yourself in your reply using the " +
+          "returned title/duration/description/publishedAt for each video: say which one you'd start " +
+          "with and why, and note runtime when it's relevant to picking (a 20-second clip vs. a " +
+          "10-minute breakdown). Don't just report a count — the thumbnails carry no information on " +
+          "their own without your reply.",
       inputSchema: {
         query: z
           .string()
@@ -70,7 +76,8 @@ export function createMcpServer(): McpServer {
             {
               type: "text",
               text: videos.length
-                ? `Found ${videos.length} video${videos.length === 1 ? "" : "s"} about "${query}" on the channel.`
+                ? `${videos.length} video${videos.length === 1 ? "" : "s"} about "${query}": ` +
+                  videos.map((v) => `"${v.title}" (${v.duration ?? "?"})`).join("; ") + "."
                 : `No videos found about "${query}" on this channel. Try a different search term.`,
             },
           ],
