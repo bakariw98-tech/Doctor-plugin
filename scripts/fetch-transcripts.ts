@@ -77,21 +77,46 @@ async function main() {
 
   let fetchedCount = 0;
   let noneCount = 0;
+  let skippedCount = 0;
 
   for (const [i, video] of toFetch.entries()) {
     const label = `[${i + 1}/${toFetch.length}] ${video.title.slice(0, 55)}`;
     process.stdout.write(`${label.padEnd(65)} `);
 
-    const transcript = await fetchTranscript(video.url, supadataKey);
+    const outcome = await fetchTranscript(video.url, supadataKey);
+
+    if (outcome.rateLimited) {
+      // Every remaining request will fail the same way — stop now rather
+      // than burning through the rest of the list. Nothing about this
+      // video (or any after it) gets written, so a re-run picks all of
+      // them back up once the limit resets.
+      console.log("— rate limited, stopping here");
+      console.log(
+        `\nHit Supadata's usage limit after ${fetchedCount + noneCount} of ${toFetch.length}. ` +
+          "Nothing from this point on was written — re-run the same command later (once the " +
+          "limit resets) to pick up where this left off.",
+      );
+      break;
+    }
+
+    if (!outcome.definitive) {
+      // Unresolved (timeout, server error, ...) — not written, so it's
+      // retried on the next run instead of being remembered as "no
+      // transcript" forever.
+      skippedCount++;
+      console.log("— unresolved, will retry next run");
+      continue;
+    }
+
     existing[video.videoId] = {
       title: video.title,
-      transcript,
+      transcript: outcome.transcript,
       fetchedAt: new Date().toISOString(),
     };
 
-    if (transcript) {
+    if (outcome.transcript) {
       fetchedCount++;
-      console.log(`✓ ${transcript.length} chars`);
+      console.log(`✓ ${outcome.transcript.length} chars`);
     } else {
       noneCount++;
       console.log("— none available");
@@ -107,6 +132,7 @@ async function main() {
   console.log(
     `\nDone. ${fetchedCount} transcript${fetchedCount === 1 ? "" : "s"} fetched this run, ` +
       `${noneCount} video${noneCount === 1 ? "" : "s"} confirmed to have none, ` +
+      `${skippedCount} unresolved (will retry next run), ` +
       `${totalOnFile} total on file.`,
   );
   console.log(`Wrote ${path.relative(process.cwd(), DATA_PATH)}`);

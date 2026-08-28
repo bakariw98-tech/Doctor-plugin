@@ -167,9 +167,15 @@ async function pollJob(jobId: string, apiKey: string): Promise<TranscriptSegment
 // response) gets cached; a transient failure (timeout, rate limit, server
 // error) does not, so a later call for the same video gets a fresh try
 // instead of being stuck on a bad result forever.
-interface TranscriptOutcome {
+export interface TranscriptOutcome {
   transcript: string | null;
   definitive: boolean;
+  // Specifically "we've hit the account's rate/usage limit," distinct from
+  // an ordinary transient failure — a caller fetching many videos in a
+  // loop should treat this as "stop now," not "skip this one and keep
+  // going," since every remaining request will fail the same way until
+  // the limit resets.
+  rateLimited?: boolean;
 }
 
 async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promise<TranscriptOutcome> {
@@ -189,8 +195,15 @@ async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promis
     if (res.status === 404 || res.status === 403) {
       return { transcript: null, definitive: true };
     }
-    // Anything else non-OK (rate limited, server error, ...) is worth
-    // retrying later rather than remembering as "no transcript" forever.
+    // The account's rate/usage limit — a distinct, detectable case, not
+    // just "some other non-OK status." Never cache or treat as "no
+    // transcript"; a bulk caller should stop entirely rather than burn
+    // through the rest of its list hitting the same wall.
+    if (res.status === 429) {
+      return { transcript: null, definitive: false, rateLimited: true };
+    }
+    // Anything else non-OK (server error, ...) is worth retrying later
+    // rather than remembering as "no transcript" forever.
     if (!res.ok) {
       return { transcript: null, definitive: false };
     }
@@ -219,42 +232,23 @@ async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promis
 }
 
 /**
- * Fetches the native-caption transcript for one video, or `null` if none
- * exists, the video isn't accessible, or the request didn't resolve in
- * time. Never throws — every failure mode here is "no transcript for this
- * video," not a reason to fail the whole search. Cached by video ID (see
- * the module-level `cache` above) so a video already checked this process
- * is never paid for again.
+ * Fetches the native-caption transcript for one video. Never throws — every
+ * failure mode here comes back as `transcript: null`, not an exception.
+ * Callers MUST check `definitive` before treating a null transcript as
+ * permanent: `false` means the request didn't resolve one way or the other
+ * (timeout, server error, or — flagged separately via `rateLimited` — the
+ * account's usage limit), so it should be retried later, not recorded as
+ * "this video has no transcript." Cached by video ID (see the module-level
+ * `cache` above) only when `definitive` is true, so a video already
+ * confirmed one way or the other this process is never paid for again,
+ * while an unresolved one gets a fresh try on the next call.
  */
-export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<string | null> {
+export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<TranscriptOutcome> {
   const id = videoIdFromUrl(videoUrl);
   const cached = cache.get(id);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { transcript: cached, definitive: true };
 
   const outcome = await fetchTranscriptUncached(videoUrl, apiKey);
   if (outcome.definitive) cache.set(id, outcome.transcript);
-  return outcome.transcript;
-}
-
-/**
- * Fetches transcripts for several videos in parallel. Returns a Map from
- * videoUrl to transcript text; a video with no entry means no transcript
- * was available (not an error — the caller just has less to work with for
- * that one).
- */
-export async function fetchTranscripts(
-  videoUrls: string[],
-  apiKey: string,
-): Promise<Map<string, string>> {
-  const results = await Promise.allSettled(
-    videoUrls.map(async (url) => [url, await fetchTranscript(url, apiKey)] as const),
-  );
-
-  const transcripts = new Map<string, string>();
-  for (const result of results) {
-    if (result.status === "fulfilled" && result.value[1]) {
-      transcripts.set(result.value[0], result.value[1]);
-    }
-  }
-  return transcripts;
+  return outcome;
 }
