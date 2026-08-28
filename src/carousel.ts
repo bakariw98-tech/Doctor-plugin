@@ -4,10 +4,14 @@
 // browser demo (src/demo.ts, driven by a plain REST call), so both stay
 // visually and behaviorally identical.
 //
-// No inline player: tapping a video always opens it externally via
-// onOpenExternal (app.openLink in the widget, window.open in the demo).
-// There's no embed to fight host CSP over, and no two-step play/close —
-// one tap, one action.
+// The widget renders thumbnails and nothing else — no title, date,
+// channel name, or description. Every word is the agent's, spoken above
+// the widget in the chat; drawing text inside the component here would
+// duplicate what the agent already said, and there's no "why this
+// matched" text worth fabricating from title-only search data yet (see
+// design/README.md). One tap opens the video externally via
+// onOpenExternal (app.openLink in the widget, window.open in the demo) —
+// no inline player, no second "watch" affordance.
 
 import type { ViewMode } from "./view";
 export type { ViewMode } from "./view";
@@ -23,35 +27,47 @@ export interface VideoResult {
   channelTitle: string;
 }
 
-export function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return "";
-  }
-}
-
 export function escapeHtml(input: string): string {
   const div = document.createElement("div");
   div.textContent = input;
   return div.innerHTML;
 }
 
-function truncate(text: string, max: number): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= max) return trimmed;
-  return `${trimmed.slice(0, max).trimEnd()}…`;
+const PLAY_ICON = `
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
+    <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
+  </svg>
+`;
+
+// The one shared unit: a thumbnail, a duration chip, a hover play cue.
+// Every layout below is just this, in a different container.
+function renderThumb(video: VideoResult, onOpenExternal: (url: string) => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "shot";
+  btn.setAttribute("aria-label", `Watch ${video.title}`);
+  btn.innerHTML = `
+    <img src="${video.thumbnail}" alt="" loading="lazy" />
+    ${video.duration ? `<span class="dur">${escapeHtml(video.duration)}</span>` : ""}
+    <span class="cue">${PLAY_ICON}</span>
+  `;
+  btn.addEventListener("click", () => onOpenExternal(video.url));
+  return btn;
 }
 
+const CONTAINER_CLASS: Record<ViewMode, string> = {
+  card: "view-solo",
+  spotlight: "view-split",
+  carousel: "view-strip",
+  grid: "view-wall",
+};
+
 /**
- * Renders `videos` into `root` in the given view. `onOpenExternal(url)`
- * fires whenever a thumbnail or "Watch" button is clicked — the caller
- * decides how "open externally" works for its host (app.openLink for the
- * widget, window.open for the plain-browser demo).
+ * Renders `videos` into `root` in the given view — a container shaped for
+ * the result count (solo / split-to-fit / scrolling strip / wrapping
+ * wall), holding nothing but thumbnails. `onOpenExternal(url)` fires on
+ * tap.
  */
 export function renderVideos(
   root: HTMLElement,
@@ -62,149 +78,14 @@ export function renderVideos(
   root.innerHTML = "";
 
   if (videos.length === 0) {
-    root.innerHTML = `<p class="empty">No videos yet. Try a search above.</p>`;
+    root.innerHTML = `<p class="empty">No videos yet.</p>`;
     return;
   }
 
-  switch (view) {
-    case "card":
-      renderCard(root, videos, onOpenExternal);
-      break;
-    case "spotlight":
-      renderSpotlight(root, videos, onOpenExternal);
-      break;
-    case "grid":
-      renderGrid(root, videos, onOpenExternal);
-      break;
-    default:
-      renderCarousel(root, videos, onOpenExternal);
-  }
-}
-
-// Horizontal scroller — good for a broader set of matches to skim.
-function renderCarousel(
-  root: HTMLElement,
-  videos: VideoResult[],
-  onOpenExternal: (url: string) => void,
-) {
-  const track = document.createElement("div");
-  track.className = "carousel-track";
-
+  const container = document.createElement("div");
+  container.className = CONTAINER_CLASS[view] ?? CONTAINER_CLASS.carousel;
   for (const video of videos) {
-    const card = document.createElement("article");
-    card.className = "card";
-    card.innerHTML = `
-      <button class="thumb-btn" type="button" aria-label="Watch ${escapeHtml(video.title)}">
-        <img src="${video.thumbnail}" alt="" loading="lazy" />
-        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
-        <span class="play-icon">▶</span>
-      </button>
-      <h3 class="title">${escapeHtml(video.title)}</h3>
-      <p class="meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
-    `;
-    card.querySelector(".thumb-btn")!.addEventListener("click", () => onOpenExternal(video.url));
-    track.appendChild(card);
+    container.appendChild(renderThumb(video, onOpenExternal));
   }
-
-  root.appendChild(track);
-}
-
-// One large detail card, full-width thumbnail on top — the inline-card
-// case for a single best match. Uses whichever video is first; callers
-// should only reach this view with exactly one result (resolveView picks
-// it that way), but it degrades gracefully to just the first video if not.
-function renderCard(
-  root: HTMLElement,
-  videos: VideoResult[],
-  onOpenExternal: (url: string) => void,
-) {
-  const video = videos[0];
-  const item = document.createElement("article");
-  item.className = "card-detail";
-  item.innerHTML = `
-    <button class="card-detail-thumb" type="button" aria-label="Watch ${escapeHtml(video.title)}">
-      <img src="${video.thumbnail}" alt="" loading="lazy" />
-      ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
-      <span class="play-icon">▶</span>
-    </button>
-    <div class="card-detail-body">
-      <h3 class="card-detail-title">${escapeHtml(video.title)}</h3>
-      <p class="card-detail-meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
-      ${video.description ? `<p class="card-detail-desc">${escapeHtml(truncate(video.description, 220))}</p>` : ""}
-      <button class="watch-btn" type="button">Watch on YouTube ↗</button>
-    </div>
-  `;
-  item
-    .querySelector(".card-detail-thumb")!
-    .addEventListener("click", () => onOpenExternal(video.url));
-  item.querySelector(".watch-btn")!.addEventListener("click", () => onOpenExternal(video.url));
-  root.appendChild(item);
-}
-
-// Wrapping grid of thumbnails — the fullscreen layout, reached only via
-// the widget's own "View all" -> requestDisplayMode({mode:"fullscreen"})
-// affordance (src/mcp-app.ts), never returned directly by the tool. Reuses
-// the same card markup as the carousel, just in a grid container instead
-// of a horizontal-scroll one.
-function renderGrid(
-  root: HTMLElement,
-  videos: VideoResult[],
-  onOpenExternal: (url: string) => void,
-) {
-  const grid = document.createElement("div");
-  grid.className = "grid-track";
-
-  for (const video of videos) {
-    const card = document.createElement("article");
-    card.className = "card";
-    card.innerHTML = `
-      <button class="thumb-btn" type="button" aria-label="Watch ${escapeHtml(video.title)}">
-        <img src="${video.thumbnail}" alt="" loading="lazy" />
-        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
-        <span class="play-icon">▶</span>
-      </button>
-      <h3 class="title">${escapeHtml(video.title)}</h3>
-      <p class="meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
-    `;
-    card.querySelector(".thumb-btn")!.addEventListener("click", () => onOpenExternal(video.url));
-    grid.appendChild(card);
-  }
-
-  root.appendChild(grid);
-}
-
-// Stacked, larger cards with a description snippet — good for a small
-// number of best matches where each one deserves more room.
-function renderSpotlight(
-  root: HTMLElement,
-  videos: VideoResult[],
-  onOpenExternal: (url: string) => void,
-) {
-  const list = document.createElement("div");
-  list.className = "spotlight-list";
-
-  for (const video of videos) {
-    const item = document.createElement("article");
-    item.className = "spotlight-card";
-    item.innerHTML = `
-      <button class="spotlight-thumb" type="button" aria-label="Watch ${escapeHtml(video.title)}">
-        <img src="${video.thumbnail}" alt="" loading="lazy" />
-        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
-        <span class="play-icon">▶</span>
-      </button>
-      <div class="spotlight-body">
-        <h3 class="spotlight-title">${escapeHtml(video.title)}</h3>
-        <p class="spotlight-meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
-        ${video.description ? `<p class="spotlight-desc">${escapeHtml(truncate(video.description, 140))}</p>` : ""}
-        <button class="watch-btn" type="button">Watch on YouTube ↗</button>
-      </div>
-    `;
-    item
-      .querySelector(".spotlight-thumb")!
-      .addEventListener("click", () => onOpenExternal(video.url));
-    item.querySelector(".watch-btn")!.addEventListener("click", () => onOpenExternal(video.url));
-    list.appendChild(item);
-  }
-
-  root.appendChild(list);
+  root.appendChild(container);
 }
