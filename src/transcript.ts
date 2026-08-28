@@ -38,6 +38,18 @@ const API_BASE = "https://api.supadata.ai/v1";
 // primary substrate for judging content, not a supporting snippet.
 const TRANSCRIPT_LIMIT = 3000;
 
+// The point of pulling transcripts at all: someone can ask a hyper-specific
+// question ("what did he say about how much protein to eat?") and the model
+// should be able to point to roughly where in the video that's answered —
+// "around 4:20" — not just confirm the topic is covered somewhere. So we
+// deliberately do NOT request Supadata's flat text=true mode; omitting
+// `text` returns an array of {text, offset, duration} segments (offset/
+// duration in ms) instead, which we fold into inline "[MM:SS]" markers
+// dropped into the flowing text every TIMESTAMP_INTERVAL_MS at most — sparse
+// enough not to eat the character budget above, dense enough to answer
+// "when does he talk about X."
+const TIMESTAMP_INTERVAL_MS = 20_000;
+
 // Native-caption fetches should resolve quickly, but stay defensive: cap
 // the request itself and the (unlikely, for native mode) async-job poll
 // so one slow video can't stall the whole tool call inside a serverless
@@ -65,8 +77,15 @@ function videoIdFromUrl(videoUrl: string): string {
   }
 }
 
+interface TranscriptSegment {
+  text: string;
+  offset: number;
+  duration?: number;
+  lang?: string;
+}
+
 interface SupadataTranscriptResponse {
-  content?: string;
+  content?: TranscriptSegment[];
   lang?: string;
 }
 
@@ -76,7 +95,7 @@ interface SupadataJobResponse {
 
 interface SupadataJobStatusResponse {
   status?: "queued" | "active" | "completed" | "failed";
-  content?: string;
+  content?: TranscriptSegment[];
   error?: unknown;
 }
 
@@ -84,6 +103,37 @@ function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max).trimEnd()}…`;
+}
+
+// mm:ss under an hour, h:mm:ss at or beyond — matches formatDuration's style
+// in youtube.ts.
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
+  const ss = String(seconds).padStart(2, "0");
+  return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+// Flattens timed segments into one string, dropping an inline "[MM:SS]"
+// marker in front of the first segment past each TIMESTAMP_INTERVAL_MS
+// window so the result reads naturally but still carries roughly-located
+// timestamps a model can quote back.
+function formatSegments(segments: TranscriptSegment[]): string {
+  let out = "";
+  let lastMarkerOffset = -Infinity;
+  for (const segment of segments) {
+    const text = segment.text?.trim();
+    if (!text) continue;
+    if (segment.offset - lastMarkerOffset >= TIMESTAMP_INTERVAL_MS) {
+      out += `${out ? " " : ""}[${formatTimestamp(segment.offset)}] `;
+      lastMarkerOffset = segment.offset;
+    }
+    out += `${text} `;
+  }
+  return out.trim();
 }
 
 async function fetchWithTimeout(url: URL, apiKey: string): Promise<Response> {
@@ -96,7 +146,7 @@ async function fetchWithTimeout(url: URL, apiKey: string): Promise<Response> {
   }
 }
 
-async function pollJob(jobId: string, apiKey: string): Promise<string | null> {
+async function pollJob(jobId: string, apiKey: string): Promise<TranscriptSegment[] | null> {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     try {
@@ -126,8 +176,11 @@ async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promis
   try {
     const url = new URL(`${API_BASE}/transcript`);
     url.searchParams.set("url", videoUrl);
-    url.searchParams.set("text", "true");
     url.searchParams.set("mode", "native");
+    // No `text=true` — deliberately requesting the segmented
+    // {text, offset, duration}[] shape (see TIMESTAMP_INTERVAL_MS above)
+    // instead of one flat string, so timestamps survive into the stored
+    // transcript.
 
     const res = await fetchWithTimeout(url, apiKey);
 
@@ -144,16 +197,22 @@ async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promis
 
     const data = (await res.json()) as SupadataTranscriptResponse & SupadataJobResponse;
     if (data.jobId) {
-      const content = await pollJob(data.jobId, apiKey);
+      const segments = await pollJob(data.jobId, apiKey);
       // A poll that ran out of attempts without resolving is ambiguous,
       // not a confirmed "no transcript" — don't cache that as permanent.
-      return { transcript: content ? truncate(content, TRANSCRIPT_LIMIT) : null, definitive: content !== null };
+      return {
+        transcript: segments?.length ? truncate(formatSegments(segments), TRANSCRIPT_LIMIT) : null,
+        definitive: segments !== null,
+      };
     }
 
     // A 200 with empty/missing content is Supadata's real "no native
     // transcript for this video" answer (their 206 case) — definitive,
     // and still billed, so it's exactly the case worth caching.
-    return { transcript: data.content ? truncate(data.content, TRANSCRIPT_LIMIT) : null, definitive: true };
+    return {
+      transcript: data.content?.length ? truncate(formatSegments(data.content), TRANSCRIPT_LIMIT) : null,
+      definitive: true,
+    };
   } catch {
     return { transcript: null, definitive: false };
   }

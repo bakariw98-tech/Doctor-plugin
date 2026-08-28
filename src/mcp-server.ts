@@ -43,7 +43,12 @@ export function createMcpServer(): McpServer {
           "uploads — not every video has one, and very new videos may not be in it yet), it's the " +
           "actual spoken content and is far more reliable for judging fit than the description or " +
           "title; prefer it when deciding which video to recommend and when describing what a video " +
-          "actually covers. The " +
+          "actually covers. The transcript has inline '[MM:SS]' markers dropped in roughly every 20 " +
+          "seconds of the video — when a question is specific enough that one moment answers it (e.g. " +
+          "'how much protein does he say to eat a day'), search the transcript for that answer and " +
+          "tell the person the approximate timestamp where it's said ('around 4:20 he says...'), not " +
+          "just that the video covers the topic. There's no timestamped link to give them — say the " +
+          "time in words so they can skip to it themselves. The " +
           "rendered widget shows thumbnails only — no titles, dates, or descriptions are drawn on " +
           "screen. So after calling this, speak the results yourself in your reply using what you " +
           "read: say which one you'd start with and why, and note runtime when it's relevant to " +
