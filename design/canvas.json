@@ -1,29 +1,49 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "title": "One — the thumbnail is the whole widget", "x": 0, "y": 0, "w": 620, "h": 450 },
-    { "file": "Few.dc.html", "title": "Few — sized to fit", "x": 720, "y": 0, "w": 620, "h": 250 },
-    { "file": "Carousel.dc.html", "title": "Many — one size, scrolls", "x": 0, "y": 570, "w": 620, "h": 230 },
-    { "file": "Grid.dc.html", "title": "Fullscreen — same tile, wrapped", "x": 720, "y": 570, "w": 900, "h": 360 }
+    { "file": "Main.dc.html", "title": "One", "x": 0, "y": 0, "w": 620, "h": 370 },
+    { "file": "Few.dc.html", "title": "Few", "x": 720, "y": 0, "w": 620, "h": 145 },
+    { "file": "Carousel.dc.html", "title": "Many — scrolls", "x": 0, "y": 570, "w": 620, "h": 140 },
+    { "file": "Grid.dc.html", "title": "Fullscreen", "x": 720, "y": 570, "w": 900, "h": 285 }
   ],
   "annotations": [
     {
       "id": "split",
-      "x": 0, "y": -210, "w": 620,
-      "text": "THE DIVISION OF LABOR\n\nAgent: every word. Which one, why, how long, what's different about it.\n\nWidget: thumbnails. Nothing else — no title, no date, no channel, no snippet, no frame.\n\nThe prose on each artboard is real assistant phrasing, not filler. Retype it on the canvas to hear other wordings."
+      "x": 0, "y": -350, "w": 1340,
+      "text": "THE ARTBOARDS ARE THE COMPONENT. NOTHING ELSE.\n\nEach frame below contains only what this widget renders: thumbnails. No title, date, channel, description, frame or surface.\n\nThe sentences in the notes underneath are the AGENT speaking — rendered by the chat host above the widget, not by us. They sit on the canvas as context so the division of labor is legible, but they are deliberately not drawn inside any artboard: an artboard is a build spec, and anything drawn in one gets built."
+    },
+    {
+      "id": "agent-one",
+      "x": 0, "y": -160, "w": 620,
+      "text": "AGENT SAYS (host-rendered, above the widget):\n\n\"He answers that one pretty directly — his point is that protein restriction is what actually triggers autophagy, not the fasting itself. It's under a minute.\""
+    },
+    {
+      "id": "agent-few",
+      "x": 720, "y": -160, "w": 620,
+      "text": "AGENT SAYS (host-rendered, above the widget):\n\n\"He's come at this three ways. The first is the 20-second version, the second gets into why insulin matters more than the fasting window itself, and the last is his fuller answer from a carnivore Q&A.\""
+    },
+    {
+      "id": "agent-many",
+      "x": 0, "y": 430, "w": 620,
+      "text": "AGENT SAYS (host-rendered, above the widget):\n\n\"He talks about fasting a lot — here are six, closest first. The short ones are clips; the three-minute one is where he lays out the whole reasoning.\""
+    },
+    {
+      "id": "agent-all",
+      "x": 720, "y": 430, "w": 900,
+      "text": "AGENT SAYS (host-rendered, above the widget):\n\n\"All six, if you'd rather just scan them.\""
     },
     {
       "id": "collapse",
-      "x": 720, "y": -210, "w": 620,
-      "text": "THIS COLLAPSES THE VIEW SYSTEM\n\nOnce the widget holds no text, \"card\" vs \"spotlight\" vs \"carousel\" stop being different components — they're one strip of thumbnails at different sizes:\n\n1 → full width · 2–3 → split to fit · 4+ → fixed 172px, scrolls · fullscreen → same tile, wrapped\n\nSo the four view modes could become one responsive component. Worth deciding before I write the code — it deletes a lot of it."
+      "x": 1700, "y": 0, "w": 340,
+      "text": "THIS COLLAPSES THE VIEW SYSTEM\n\nWith no text in the widget, these four stop being different components. They're one strip of thumbnails at different sizes:\n\n1 → full width\n2–3 → split to fit\n4+ → fixed 172px, scrolls\nfullscreen → same tile, wrapped\n\nStill to decide: fold the four ViewModes into one responsive component. It deletes most of carousel.ts and view.ts."
     },
     {
       "id": "chip",
-      "x": 1400, "y": 0, "w": 300,
-      "text": "THE ONE THING I KEPT\n\nDuration. It rides on the image rather than around it, so it costs no layout, and the agent can't recite six durations in a sentence.\n\nIf you want it gone, the widget becomes literally just pictures — say the word."
+      "x": 1700, "y": 570, "w": 340,
+      "text": "THE ONE THING I KEPT\n\nDuration. It rides on the image rather than around it, so it costs no layout, and the agent can't recite six durations in a sentence.\n\nSay the word and the widget becomes literally just pictures."
     },
     {
       "id": "a11y",
-      "x": 0, "y": 880, "w": 620,
+      "x": 0, "y": 760, "w": 620,
       "text": "Titles aren't deleted, just not drawn — each thumbnail carries its title in aria-label, so screen readers announce the video instead of \"link, image\". Visually absent, semantically present."
     }
   ],

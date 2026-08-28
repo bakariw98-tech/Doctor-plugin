@@ -30,8 +30,13 @@ This is a deliberate reversal of the first pass, which built restrained
 label inside the widget belongs in the agent's sentence instead, where it
 reads better and costs no chrome.
 
-The prose on each artboard is real assistant phrasing, written as literal
-markup so it can be retyped on the canvas to test other wordings.
+The agent's sentence is **not drawn in any artboard**. An artboard is a
+build spec, and anything drawn in one gets built — putting host-rendered
+prose inside the component frame would invite someone (including a later
+pass of this project) to implement it as widget text. The example
+sentences live in canvas notes beside each artboard instead, labelled as
+host-rendered, so the division of labor stays legible without the
+component claiming to own it.
 
 ## The view system probably collapses
 
