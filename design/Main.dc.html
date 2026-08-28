@@ -35,13 +35,6 @@
     a{ color: var(--ring); text-decoration: none; }
     a:hover{ color: var(--ring); }
 
-    /* The agent's own message. Host-rendered prose — this is where every
-       word now lives. The widget below it holds no text at all. */
-    .say{
-      font-size: 15px; line-height: 1.62; letter-spacing: -0.002em;
-      color: var(--text); text-wrap: pretty; margin: 0 0 16px;
-      max-width: 62ch;
-    }
 
     /* THE ENTIRE WIDGET. A thumbnail is the whole component: no frame,
        no surface, no label. Title rides in aria-label for screen readers. */
@@ -77,8 +70,7 @@
     .one .shot{ width: 100%; }
   </style>
 </helmet>
-<div class="{{themeClass}}" style="padding: 20px;">
-  <p class="say">He answers that one pretty directly &mdash; his point is that protein restriction is what actually triggers autophagy, not the fasting itself. It&rsquo;s under a minute.</p>
+<div class="{{themeClass}}" style="padding: 16px;">
 
   <div class="one">
     <sc-for list="{{videos}}" as="v" hint-placeholder-count="1">
@@ -96,7 +88,7 @@
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":620,"height":450}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":620,"height":370}}'>
 class Component extends DCLogic {
   renderVals() {
     return {
