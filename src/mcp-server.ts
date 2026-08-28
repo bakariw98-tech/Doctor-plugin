@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { searchChannelVideos } from "./youtube.js";
+import { resolveView } from "./view.js";
 import { WIDGET_HTML } from "./generated/widget-html.js";
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
@@ -40,6 +41,15 @@ export function createMcpServer(): McpServer {
           .max(20)
           .optional()
           .describe("How many videos to return (default 8, max 20)."),
+        view: z
+          .enum(["auto", "carousel", "spotlight"])
+          .optional()
+          .describe(
+            "Layout for the results. 'carousel' is a horizontal scroller (good for browsing many " +
+              "matches); 'spotlight' is a stacked list with a description snippet per video (good for " +
+              "a small number of best matches). 'auto' (default) picks spotlight for 3 or fewer " +
+              "results and carousel otherwise.",
+          ),
       },
       _meta: {
         ui: { resourceUri: RESOURCE_URI },
@@ -49,9 +59,10 @@ export function createMcpServer(): McpServer {
         "openai/toolInvocation/invoked": "Here's what I found.",
       },
     },
-    async ({ query, maxResults }) => {
+    async ({ query, maxResults, view }) => {
       try {
         const videos = await searchChannelVideos(query, maxResults ?? 8);
+        const resolvedView = resolveView(view, videos.length);
         return {
           content: [
             {
@@ -61,7 +72,7 @@ export function createMcpServer(): McpServer {
                 : `No videos found about "${query}" on this channel. Try a different search term.`,
             },
           ],
-          structuredContent: { query, videos },
+          structuredContent: { query, view: resolvedView, videos },
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -86,14 +97,11 @@ export function createMcpServer(): McpServer {
           text: WIDGET_HTML,
           _meta: {
             ui: {
-              // The host renders the widget in a sandboxed iframe with a
-              // deny-by-default CSP. Without this, frame-src is 'none' and
-              // the YouTube embed is silently blocked — it plays in a plain
-              // browser tab (no sandbox) but not inside the widget. Not
-              // every host honors this yet, which is why the widget also
-              // has an "Open on YouTube" fallback via app.openLink.
+              // No video embed (no frameDomains needed) — tapping a video
+              // always opens it externally via app.openLink instead of
+              // playing inline, so there's no iframe CSP to fight across
+              // hosts. resourceDomains covers the YouTube thumbnail images.
               csp: {
-                frameDomains: ["https://www.youtube.com"],
                 resourceDomains: ["https://i.ytimg.com"],
               },
             },

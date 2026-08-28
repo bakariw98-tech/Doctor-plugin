@@ -1,8 +1,16 @@
 // src/carousel.ts
-// Shared rendering logic for the video carousel. Used by both the MCP App
+// Shared rendering logic for video results. Used by both the MCP App
 // widget (src/mcp-app.ts, driven by the host bridge) and the standalone
 // browser demo (src/demo.ts, driven by a plain REST call), so both stay
 // visually and behaviorally identical.
+//
+// No inline player: tapping a video always opens it externally via
+// onOpenExternal (app.openLink in the widget, window.open in the demo).
+// There's no embed to fight host CSP over, and no two-step play/close —
+// one tap, one action.
+
+import type { ViewMode } from "./view";
+export type { ViewMode } from "./view";
 
 export interface VideoResult {
   videoId: string;
@@ -33,22 +41,22 @@ export function escapeHtml(input: string): string {
   return div.innerHTML;
 }
 
+function truncate(text: string, max: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max).trimEnd()}…`;
+}
+
 /**
- * Renders the carousel into `root`. `playingId`, when set, expands that
- * card into a live YouTube embed instead of a thumbnail. `onPlay(videoId)`
- * fires when a thumbnail is clicked; `onClose()` fires when the open
- * player's close button is clicked. `onOpenExternal(url)` fires when
- * "Watch on YouTube" is clicked — a fallback for hosts whose iframe
- * sandbox doesn't allow the embed (the embed itself can silently fail
- * depending on host CSP support, so this is always shown, not just on
- * error).
+ * Renders `videos` into `root` in the given view. `onOpenExternal(url)`
+ * fires whenever a thumbnail or "Watch" button is clicked — the caller
+ * decides how "open externally" works for its host (app.openLink for the
+ * widget, window.open for the plain-browser demo).
  */
-export function renderCarousel(
+export function renderVideos(
   root: HTMLElement,
   videos: VideoResult[],
-  playingId: string | null,
-  onPlay: (videoId: string) => void,
-  onClose: () => void,
+  view: ViewMode,
   onOpenExternal: (url: string) => void,
 ) {
   root.innerHTML = "";
@@ -58,49 +66,73 @@ export function renderCarousel(
     return;
   }
 
+  if (view === "spotlight") {
+    renderSpotlight(root, videos, onOpenExternal);
+  } else {
+    renderCarousel(root, videos, onOpenExternal);
+  }
+}
+
+// Horizontal scroller — good for a broader set of matches to skim.
+function renderCarousel(
+  root: HTMLElement,
+  videos: VideoResult[],
+  onOpenExternal: (url: string) => void,
+) {
   const track = document.createElement("div");
   track.className = "carousel-track";
 
   for (const video of videos) {
     const card = document.createElement("article");
     card.className = "card";
-
-    if (playingId === video.videoId) {
-      card.classList.add("playing");
-      card.innerHTML = `
-        <div class="player-wrap">
-          <iframe
-            src="https://www.youtube.com/embed/${video.videoId}?autoplay=1&rel=0"
-            title="${escapeHtml(video.title)}"
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowfullscreen
-          ></iframe>
-        </div>
-        <h3 class="title">${escapeHtml(video.title)}</h3>
-        <div class="player-actions">
-          <button class="close-btn" type="button">Close</button>
-          <button class="open-external-btn" type="button">Watch on YouTube ↗</button>
-        </div>
-      `;
-      card.querySelector(".close-btn")!.addEventListener("click", onClose);
-      card
-        .querySelector(".open-external-btn")!
-        .addEventListener("click", () => onOpenExternal(video.url));
-    } else {
-      card.innerHTML = `
-        <button class="thumb-btn" type="button" aria-label="Play ${escapeHtml(video.title)}">
-          <img src="${video.thumbnail}" alt="" loading="lazy" />
-          ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
-          <span class="play-icon">▶</span>
-        </button>
-        <h3 class="title">${escapeHtml(video.title)}</h3>
-        <p class="meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
-      `;
-      card.querySelector(".thumb-btn")!.addEventListener("click", () => onPlay(video.videoId));
-    }
-
+    card.innerHTML = `
+      <button class="thumb-btn" type="button" aria-label="Watch ${escapeHtml(video.title)}">
+        <img src="${video.thumbnail}" alt="" loading="lazy" />
+        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
+        <span class="play-icon">▶</span>
+      </button>
+      <h3 class="title">${escapeHtml(video.title)}</h3>
+      <p class="meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
+    `;
+    card.querySelector(".thumb-btn")!.addEventListener("click", () => onOpenExternal(video.url));
     track.appendChild(card);
   }
 
   root.appendChild(track);
+}
+
+// Stacked, larger cards with a description snippet — good for a small
+// number of best matches where each one deserves more room.
+function renderSpotlight(
+  root: HTMLElement,
+  videos: VideoResult[],
+  onOpenExternal: (url: string) => void,
+) {
+  const list = document.createElement("div");
+  list.className = "spotlight-list";
+
+  for (const video of videos) {
+    const item = document.createElement("article");
+    item.className = "spotlight-card";
+    item.innerHTML = `
+      <button class="spotlight-thumb" type="button" aria-label="Watch ${escapeHtml(video.title)}">
+        <img src="${video.thumbnail}" alt="" loading="lazy" />
+        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
+        <span class="play-icon">▶</span>
+      </button>
+      <div class="spotlight-body">
+        <h3 class="spotlight-title">${escapeHtml(video.title)}</h3>
+        <p class="spotlight-meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
+        ${video.description ? `<p class="spotlight-desc">${escapeHtml(truncate(video.description, 140))}</p>` : ""}
+        <button class="watch-btn" type="button">Watch on YouTube ↗</button>
+      </div>
+    `;
+    item
+      .querySelector(".spotlight-thumb")!
+      .addEventListener("click", () => onOpenExternal(video.url));
+    item.querySelector(".watch-btn")!.addEventListener("click", () => onOpenExternal(video.url));
+    list.appendChild(item);
+  }
+
+  root.appendChild(list);
 }

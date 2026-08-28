@@ -3,6 +3,7 @@
 // at the site root — GET /api/search?q=... -> { query, videos }.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { searchChannelVideos } from "../src/youtube.js";
+import { resolveView, type ViewOption } from "../src/view.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -20,10 +21,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const maxParam = req.query.max;
   const maxResults = typeof maxParam === "string" ? Number(maxParam) : undefined;
+  const viewParam = typeof req.query.view === "string" ? (req.query.view as ViewOption) : undefined;
 
   try {
     const videos = await searchChannelVideos(query, maxResults ?? 8);
-    res.status(200).json({ query, videos });
+    const view = resolveView(viewParam, videos.length);
+    res.status(200).json({ query, view, videos });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });

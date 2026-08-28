@@ -1,11 +1,12 @@
 // src/mcp-app.ts
-// UI logic for the video carousel widget. Runs inside the sandboxed iframe
+// UI logic for the video results widget. Runs inside the sandboxed iframe
 // the MCP host renders, and talks back to the server via the App bridge.
 import { App } from "@modelcontextprotocol/ext-apps";
-import { renderCarousel, type VideoResult } from "./carousel";
+import { renderVideos, type VideoResult, type ViewMode } from "./carousel";
 
 interface ToolPayload {
   query: string;
+  view: ViewMode;
   videos: VideoResult[];
 }
 
@@ -19,32 +20,18 @@ const app = new App({ name: "Doctor Video Search", version: "1.0.0" });
 app.connect();
 
 let currentVideos: VideoResult[] = [];
-// videoId of the card currently showing an embedded player, if any.
-let playingId: string | null = null;
+let currentView: ViewMode = "carousel";
 
 function render() {
-  renderCarousel(
-    root,
-    currentVideos,
-    playingId,
-    (videoId) => {
-      playingId = videoId;
-      render();
-    },
-    () => {
-      playingId = null;
-      render();
-    },
-    (url) => {
-      void app.openLink({ url });
-    },
-  );
+  renderVideos(root, currentVideos, currentView, (url) => {
+    void app.openLink({ url });
+  });
 }
 
 function applyPayload(payload: ToolPayload | undefined | null) {
   if (!payload) return;
   currentVideos = payload.videos ?? [];
-  playingId = null;
+  currentView = payload.view ?? "carousel";
   statusEl.textContent = currentVideos.length
     ? `${currentVideos.length} video${currentVideos.length === 1 ? "" : "s"} for "${payload.query}"`
     : `No videos found for "${payload.query}".`;

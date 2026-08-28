@@ -1,9 +1,11 @@
 <!-- index.html -->
-<!-- Standalone browser demo of the carousel widget. Deployed as the site
-     root on Vercel so you can test search + inline playback without
-     needing a Claude/ChatGPT connector. The actual MCP App widget
+<!-- Standalone browser demo of the widget. Deployed as the site root on
+     Vercel so you can test search, both layouts, and the view selector
+     without needing a Claude/ChatGPT connector. The actual MCP App widget
      (mcp-app.html) shares its rendering code with this page via
-     src/carousel.ts, so what you see here matches what renders in chat. -->
+     src/carousel.ts and its view logic via src/view.ts, so what you see
+     here matches what renders in chat (minus the view dropdown, which
+     only exists here — in chat the model/tool picks the view). -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -32,6 +34,13 @@
         font-size: 15px;
         min-width: 0;
       }
+      #view-select {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #d0d0d0;
+        font-size: 15px;
+        background: white;
+      }
       #search-form button {
         padding: 10px 16px;
         border-radius: 8px;
@@ -44,6 +53,8 @@
       }
       #search-form button:disabled { opacity: 0.6; cursor: default; }
       #status { font-size: 12px; color: #666; margin-bottom: 8px; min-height: 16px; }
+
+      /* Carousel view */
       .carousel-track {
         display: flex;
         gap: 12px;
@@ -59,18 +70,81 @@
         background: #f7f7f8;
         border: 1px solid #e5e5e5;
       }
-      .card.playing { flex-basis: 320px; }
-      .thumb-btn {
+      .title {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 8px 10px 2px;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .meta { font-size: 11px; color: #888; margin: 0 10px 10px; }
+
+      /* Spotlight view */
+      .spotlight-list { display: flex; flex-direction: column; gap: 14px; }
+      .spotlight-card {
+        display: flex;
+        gap: 12px;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #f7f7f8;
+        border: 1px solid #e5e5e5;
+        padding: 10px;
+      }
+      .spotlight-thumb {
+        position: relative;
+        flex: 0 0 160px;
+        aspect-ratio: 16 / 9;
+        padding: 0;
+        border: none;
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #000;
+        align-self: flex-start;
+      }
+      .spotlight-body { flex: 1; min-width: 0; }
+      .spotlight-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0 0 4px;
+        line-height: 1.3;
+      }
+      .spotlight-meta { font-size: 12px; color: #888; margin: 0 0 6px; }
+      .spotlight-desc {
+        font-size: 13px;
+        color: #555;
+        margin: 0 0 8px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .watch-btn {
+        padding: 5px 12px;
+        border-radius: 6px;
+        border: 1px solid #1a73e8;
+        color: #1a73e8;
+        background: white;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      /* Shared thumbnail chrome */
+      .thumb-btn,
+      .spotlight-thumb {
         position: relative;
         display: block;
         width: 100%;
-        aspect-ratio: 16 / 9;
-        padding: 0;
         border: none;
         cursor: pointer;
         background: #000;
       }
-      .thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .thumb-btn { aspect-ratio: 16 / 9; padding: 0; }
+      .thumb-btn img,
+      .spotlight-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
       .duration {
         position: absolute;
         right: 6px;
@@ -93,46 +167,17 @@
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
         pointer-events: none;
       }
-      .player-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
-      .player-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
-      .title {
-        font-size: 13px;
-        font-weight: 600;
-        margin: 8px 10px 2px;
-        line-height: 1.3;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-      .meta { font-size: 11px; color: #888; margin: 0 10px 10px; }
-      .player-actions {
-        display: flex;
-        gap: 8px;
-        margin: 0 10px 10px;
-      }
-      .close-btn,
-      .open-external-btn {
-        padding: 4px 10px;
-        border-radius: 6px;
-        border: 1px solid #d0d0d0;
-        background: white;
-        font-size: 12px;
-        cursor: pointer;
-      }
-      .open-external-btn {
-        border-color: #1a73e8;
-        color: #1a73e8;
-      }
+
       .empty { font-size: 13px; color: #888; }
       footer { margin-top: 28px; font-size: 12px; color: #999; }
       footer a { color: inherit; }
       @media (prefers-color-scheme: dark) {
         body { background: #121212; color: #f0f0f0; }
-        #search-input { background: #2a2a2a; border-color: #444; color: #f0f0f0; }
-        .card { background: #1e1e1e; border-color: #333; }
-        .close-btn { background: #2a2a2a; border-color: #444; color: #f0f0f0; }
-        .open-external-btn { background: #2a2a2a; }
+        #search-input, #view-select { background: #2a2a2a; border-color: #444; color: #f0f0f0; }
+        .card, .spotlight-card { background: #1e1e1e; border-color: #333; }
+        .meta, .spotlight-meta { color: #999; }
+        .spotlight-desc { color: #ccc; }
+        .watch-btn { background: #2a2a2a; }
       }
     </style>
   </head>
@@ -141,7 +186,10 @@
       <h1>Doctor Video Search</h1>
       <p class="subtitle">
         Live demo of the MCP App widget — search runs against the channel
-        configured on the server. Click a thumbnail to play it inline.
+        configured on the server. In chat, the tool picks Carousel vs.
+        Spotlight automatically based on how many matches it found; here
+        you can force either to compare them. Tap a video to open it on
+        YouTube.
       </p>
       <div id="app">
         <form id="search-form">
@@ -150,6 +198,7 @@
             type="text"
             placeholder="Search this channel (e.g. &quot;lower back pain&quot;)"
           />
+          <select id="view-select" aria-label="View"></select>
           <button id="search-button" type="submit">Search</button>
         </form>
         <div id="status"></div>
