@@ -17,6 +17,11 @@ export interface VideoResult {
   // model's own reasoning about which video actually fits the question,
   // beyond what YouTube's keyword search ranking surfaced.
   tags?: string[];
+  // Set by mcp-server.ts after this module returns, for the top few
+  // results only, when SUPADATA_API_KEY is configured — see
+  // src/transcript.ts. Not fetched here since this module only knows
+  // about the YouTube Data API.
+  transcript?: string;
 }
 
 interface YoutubeThumbnail {
