@@ -29,6 +29,7 @@ export interface VideoResult {
   // the type because it flows through the same structuredContent the
   // model reasons over (src/mcp-server.ts).
   tags?: string[];
+  transcript?: string;
 }
 
 export function escapeHtml(input: string): string {
