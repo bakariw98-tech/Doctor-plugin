@@ -4,8 +4,9 @@
 // title/description/tags — for judging whether it really answers the
 // question, and for speaking about it accurately in the reply.
 //
-// Two deliberate limits, both about cost and latency rather than the API's
-// capabilities:
+// Deliberate limits, all about staying inside a small credit budget
+// rather than the API's actual capabilities (the account this runs
+// against has roughly a 100-transcript allowance):
 //
 // 1. mode is always "native" — only an existing caption track is fetched,
 //    never AI-generated. Generation is priced per minute of video (2
@@ -17,6 +18,13 @@
 //    mcp-server.ts) — never for every result in a large carousel, and
 //    never from the plain REST demo endpoint (api/search.ts), which has
 //    no agent in the loop to read a transcript anyway.
+// 3. Every outcome — a real transcript, or a confirmed "this video has
+//    none" — is cached by video ID (see below), so the same video is
+//    never paid for twice. A 206 "transcript unavailable" response still
+//    costs 1 credit per Supadata's pricing, same as a successful fetch,
+//    so caching the negative result matters just as much as caching the
+//    positive one when the same handful of popular videos keep surfacing
+//    across repeated test searches.
 
 const API_BASE = "https://api.supadata.ai/v1";
 
@@ -33,6 +41,25 @@ const TRANSCRIPT_LIMIT = 3000;
 const REQUEST_TIMEOUT_MS = 8000;
 const MAX_POLL_ATTEMPTS = 6;
 const POLL_INTERVAL_MS = 1000;
+
+// Process-lifetime cache, keyed by video ID: `null` means "we asked and
+// confirmed this video has no transcript," not "we haven't checked yet"
+// (absence from the map means the latter). This is a plain in-memory Map,
+// not a persistent store — it survives repeated calls within one warm
+// process (the whole session for local dev via server.ts; a given warm
+// Vercel Lambda instance in production) but resets on a cold start or a
+// new deployment. That's a real gap if the ~100-credit budget needs a
+// hard guarantee across restarts — ask if that's needed and it's worth
+// backing this with Vercel KV or similar instead of process memory.
+const cache = new Map<string, string | null>();
+
+function videoIdFromUrl(videoUrl: string): string {
+  try {
+    return new URL(videoUrl).searchParams.get("v") ?? videoUrl;
+  } catch {
+    return videoUrl;
+  }
+}
 
 interface SupadataTranscriptResponse {
   content?: string;
@@ -82,13 +109,16 @@ async function pollJob(jobId: string, apiKey: string): Promise<string | null> {
   return null;
 }
 
-/**
- * Fetches the native-caption transcript for one video, or `null` if none
- * exists, the video isn't accessible, or the request didn't resolve in
- * time. Never throws — every failure mode here is "no transcript for this
- * video," not a reason to fail the whole search.
- */
-export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<string | null> {
+// A "definitive" outcome (real content, or a confirmed no-transcript
+// response) gets cached; a transient failure (timeout, rate limit, server
+// error) does not, so a later call for the same video gets a fresh try
+// instead of being stuck on a bad result forever.
+interface TranscriptOutcome {
+  transcript: string | null;
+  definitive: boolean;
+}
+
+async function fetchTranscriptUncached(videoUrl: string, apiKey: string): Promise<TranscriptOutcome> {
   try {
     const url = new URL(`${API_BASE}/transcript`);
     url.searchParams.set("url", videoUrl);
@@ -96,18 +126,51 @@ export async function fetchTranscript(videoUrl: string, apiKey: string): Promise
     url.searchParams.set("mode", "native");
 
     const res = await fetchWithTimeout(url, apiKey);
-    if (!res.ok) return null;
+
+    // Video doesn't exist, is private, or is otherwise inaccessible —
+    // that's not going to change on retry, so it's safe to cache.
+    if (res.status === 404 || res.status === 403) {
+      return { transcript: null, definitive: true };
+    }
+    // Anything else non-OK (rate limited, server error, ...) is worth
+    // retrying later rather than remembering as "no transcript" forever.
+    if (!res.ok) {
+      return { transcript: null, definitive: false };
+    }
 
     const data = (await res.json()) as SupadataTranscriptResponse & SupadataJobResponse;
     if (data.jobId) {
       const content = await pollJob(data.jobId, apiKey);
-      return content ? truncate(content, TRANSCRIPT_LIMIT) : null;
+      // A poll that ran out of attempts without resolving is ambiguous,
+      // not a confirmed "no transcript" — don't cache that as permanent.
+      return { transcript: content ? truncate(content, TRANSCRIPT_LIMIT) : null, definitive: content !== null };
     }
 
-    return data.content ? truncate(data.content, TRANSCRIPT_LIMIT) : null;
+    // A 200 with empty/missing content is Supadata's real "no native
+    // transcript for this video" answer (their 206 case) — definitive,
+    // and still billed, so it's exactly the case worth caching.
+    return { transcript: data.content ? truncate(data.content, TRANSCRIPT_LIMIT) : null, definitive: true };
   } catch {
-    return null;
+    return { transcript: null, definitive: false };
   }
+}
+
+/**
+ * Fetches the native-caption transcript for one video, or `null` if none
+ * exists, the video isn't accessible, or the request didn't resolve in
+ * time. Never throws — every failure mode here is "no transcript for this
+ * video," not a reason to fail the whole search. Cached by video ID (see
+ * the module-level `cache` above) so a video already checked this process
+ * is never paid for again.
+ */
+export async function fetchTranscript(videoUrl: string, apiKey: string): Promise<string | null> {
+  const id = videoIdFromUrl(videoUrl);
+  const cached = cache.get(id);
+  if (cached !== undefined) return cached;
+
+  const outcome = await fetchTranscriptUncached(videoUrl, apiKey);
+  if (outcome.definitive) cache.set(id, outcome.transcript);
+  return outcome.transcript;
 }
 
 /**
