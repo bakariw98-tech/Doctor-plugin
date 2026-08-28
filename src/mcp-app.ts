@@ -35,6 +35,9 @@ function render() {
       playingId = null;
       render();
     },
+    (url) => {
+      void app.openLink({ url });
+    },
   );
 }
 

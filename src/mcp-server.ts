@@ -79,7 +79,27 @@ export function createMcpServer(): McpServer {
     RESOURCE_URI,
     { mimeType: RESOURCE_MIME_TYPE },
     async () => ({
-      contents: [{ uri: RESOURCE_URI, mimeType: RESOURCE_MIME_TYPE, text: WIDGET_HTML }],
+      contents: [
+        {
+          uri: RESOURCE_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: WIDGET_HTML,
+          _meta: {
+            ui: {
+              // The host renders the widget in a sandboxed iframe with a
+              // deny-by-default CSP. Without this, frame-src is 'none' and
+              // the YouTube embed is silently blocked — it plays in a plain
+              // browser tab (no sandbox) but not inside the widget. Not
+              // every host honors this yet, which is why the widget also
+              // has an "Open on YouTube" fallback via app.openLink.
+              csp: {
+                frameDomains: ["https://www.youtube.com"],
+                resourceDomains: ["https://i.ytimg.com"],
+              },
+            },
+          },
+        },
+      ],
     }),
   );
 

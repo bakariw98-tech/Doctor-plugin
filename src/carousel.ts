@@ -37,7 +37,11 @@ export function escapeHtml(input: string): string {
  * Renders the carousel into `root`. `playingId`, when set, expands that
  * card into a live YouTube embed instead of a thumbnail. `onPlay(videoId)`
  * fires when a thumbnail is clicked; `onClose()` fires when the open
- * player's close button is clicked.
+ * player's close button is clicked. `onOpenExternal(url)` fires when
+ * "Watch on YouTube" is clicked — a fallback for hosts whose iframe
+ * sandbox doesn't allow the embed (the embed itself can silently fail
+ * depending on host CSP support, so this is always shown, not just on
+ * error).
  */
 export function renderCarousel(
   root: HTMLElement,
@@ -45,6 +49,7 @@ export function renderCarousel(
   playingId: string | null,
   onPlay: (videoId: string) => void,
   onClose: () => void,
+  onOpenExternal: (url: string) => void,
 ) {
   root.innerHTML = "";
 
@@ -72,9 +77,15 @@ export function renderCarousel(
           ></iframe>
         </div>
         <h3 class="title">${escapeHtml(video.title)}</h3>
-        <button class="close-btn" type="button">Close</button>
+        <div class="player-actions">
+          <button class="close-btn" type="button">Close</button>
+          <button class="open-external-btn" type="button">Watch on YouTube ↗</button>
+        </div>
       `;
       card.querySelector(".close-btn")!.addEventListener("click", onClose);
+      card
+        .querySelector(".open-external-btn")!
+        .addEventListener("click", () => onOpenExternal(video.url));
     } else {
       card.innerHTML = `
         <button class="thumb-btn" type="button" aria-label="Play ${escapeHtml(video.title)}">

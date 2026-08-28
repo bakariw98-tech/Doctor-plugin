@@ -32,6 +32,9 @@ function render() {
       playingId = null;
       render();
     },
+    (url) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
   );
 }
 
