@@ -30,12 +30,19 @@ export function createMcpServer(): McpServer {
       title: "Search Doctor Videos",
       description:
         "Searches the configured doctor's YouTube channel for videos matching a symptom, topic, or " +
-          "question. The rendered widget shows thumbnails only — no titles, dates, or descriptions are " +
-          "drawn on screen. So after calling this, speak the results yourself in your reply using the " +
-          "returned title/duration/description/publishedAt for each video: say which one you'd start " +
-          "with and why, and note runtime when it's relevant to picking (a 20-second clip vs. a " +
-          "10-minute breakdown). Don't just report a count — the thumbnails carry no information on " +
-          "their own without your reply.",
+          "question, using YouTube's own keyword search as a first pass. Each result comes back with " +
+          "its full, untruncated video description (not the ~130-character snippet YouTube's search " +
+          "API normally returns) and its tags, on top of title/duration/publishedAt — read that full " +
+          "description and tags yourself and use your own judgment about which result(s) actually " +
+          "answer the question, since keyword ranking alone can surface a video that mentions the " +
+          "right words in passing over one that's actually about the topic, or miss one that's " +
+          "conceptually relevant but phrased differently. If the closest keyword match doesn't really " +
+          "fit, say so and point to whichever one does, rather than defaulting to result order. The " +
+          "rendered widget shows thumbnails only — no titles, dates, or descriptions are drawn on " +
+          "screen. So after calling this, speak the results yourself in your reply using what you " +
+          "read: say which one you'd start with and why, and note runtime when it's relevant to " +
+          "picking (a 20-second clip vs. a 10-minute breakdown). Don't just report a count — the " +
+          "thumbnails carry no information on their own without your reply.",
       inputSchema: {
         query: z
           .string()
