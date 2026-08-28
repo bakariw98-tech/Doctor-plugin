@@ -220,6 +220,65 @@ function buildVideoResult(item: YoutubeItem, details: Map<string, YoutubeVideoDe
   };
 }
 
+/**
+ * Fetches full video details for a specific set of video IDs directly
+ * (videos.list, not a search) — one call, no ranking involved. Used to
+ * pull in videos that a local transcript-content match surfaced but
+ * YouTube's own keyword search didn't return, so they can be presented
+ * with the same full data (thumbnail, description, tags, duration) as any
+ * other result. Best-effort per batch, same as fetchVideoDetails.
+ */
+export async function getVideosByIds(videoIds: string[]): Promise<VideoResult[]> {
+  if (videoIds.length === 0) return [];
+  const apiKey = requireApiKey();
+  const results: VideoResult[] = [];
+
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const url = new URL(`${API_BASE}/videos`);
+      url.searchParams.set("part", "snippet,contentDetails");
+      url.searchParams.set("id", batch.join(","));
+      url.searchParams.set("key", apiKey);
+
+      const res = await fetch(url);
+      if (!res.ok) continue;
+
+      const data = (await res.json()) as {
+        items?: {
+          id: string;
+          snippet: YoutubeSnippet & { tags?: string[] };
+          contentDetails?: { duration?: string };
+        }[];
+      };
+      for (const item of data.items ?? []) {
+        results.push(
+          buildVideoResult(
+            { videoId: item.id, snippet: item.snippet },
+            new Map([
+              [
+                item.id,
+                {
+                  duration: item.contentDetails?.duration
+                    ? formatDuration(item.contentDetails.duration)
+                    : undefined,
+                  description: item.snippet.description,
+                  tags: item.snippet.tags,
+                },
+              ],
+            ]),
+          ),
+        );
+      }
+    } catch {
+      // Non-fatal — a video that fails to fetch here just doesn't get
+      // added to the result set.
+    }
+  }
+
+  return results;
+}
+
 export async function searchChannelVideos(
   query: string,
   maxResults = 8,
