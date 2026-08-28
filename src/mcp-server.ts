@@ -19,6 +19,20 @@ import { TRANSCRIPTS } from "./generated/transcripts.js";
 // into a response ahead of YouTube's own keyword-ranked results.
 const MAX_TRANSCRIPT_BOOSTED = 3;
 
+// Thresholds for treating a transcript match as "this is clearly THE
+// video" rather than just "a video worth boosting alongside others." A
+// specific, answerable question ("what causes crooked teeth") tends to
+// have exactly one video with real coverage; a broad topic browse
+// ("cholesterol") tends to have several with comparable scores — no
+// single one dominating is itself the signal that this is a browse, not
+// a lookup. Relying on the model to notice a single strong match and
+// re-call with maxResults: 1 was unreliable in practice (it would narrate
+// one video while the widget kept showing the full list) — narrowing the
+// actual result set here, automatically, is what makes "just show me the
+// one video" actually happen on the first call instead of the second.
+const DECISIVE_MIN_SCORE = 2000; // at least 2 distinct query terms covered
+const DECISIVE_MARGIN = 1.75; // top score must lead the runner-up by this much
+
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
 export const RESOURCE_URI = "ui://search-doctor-videos/mcp-app.html";
@@ -102,23 +116,23 @@ export function createMcpServer(): McpServer {
       title: "Search Doctor Videos",
       description:
         "Searches the configured doctor's YouTube channel for videos matching a symptom, topic, or " +
-          "question, using YouTube's own keyword search as a first pass, plus a second pass that " +
-          "searches the actual spoken content of every locally-transcribed video (YouTube's own " +
-          "search never does this — it only indexes title/description/tags) and surfaces any real " +
-          "content match first, ahead of the keyword-ranked results, even if its title shares no " +
-          "words with the question. Each result comes back with its full, untruncated video " +
+          "question. Before running YouTube's own keyword search, it first checks the actual spoken " +
+          "content of every locally-transcribed video (YouTube's own search never does this — it " +
+          "only indexes title/description/tags) — when one video's transcript clearly stands out as " +
+          "the answer, that single video is returned on its own, no keyword search needed, so a " +
+          "specific question ('what causes crooked teeth') reliably comes back as one focused result " +
+          "instead of a pile you'd have to sort through, even when its title shares no words with " +
+          "the question. A broader topic browse ('videos about cholesterol') won't have one video " +
+          "dominating like that, so it falls back to the normal keyword-ranked list — several " +
+          "results back is the expected, correct behavior there, not something to narrow further " +
+          "unless asked. Each result comes back with its full, untruncated video " +
           "description (not the ~130-character snippet YouTube's search API normally returns) and " +
           "its tags, on top of title/duration/publishedAt — read that full description and tags " +
           "yourself and use your own judgment about which result(s) actually answer the question, " +
           "since keyword ranking alone can surface a video that mentions the right words in passing " +
           "over one that's actually about the topic, or miss one that's conceptually relevant but " +
           "phrased differently. If the closest keyword match doesn't really fit, say so and point to " +
-          "whichever one does, rather than defaulting to result order. For a specific, answerable " +
-          "question (not a broad topic browse), your job is to converge on the ONE video that " +
-          "actually answers it, using its transcript to confirm — don't just hand back a pile of " +
-          "results and make the person figure it out. When you're confident which single video " +
-          "answers it, call this tool again with maxResults: 1 and that video's exact title as the " +
-          "query, so the widget shows just that one thumbnail instead of a whole set. When " +
+          "whichever one does, rather than defaulting to result order. When " +
           "a transcript is present (from a pre-built local dataset covering the channel's recent " +
           "uploads — not every video has one, and very new videos may not be in it yet), it's the " +
           "actual spoken content and is far more reliable for judging fit than the description or " +
@@ -168,30 +182,53 @@ export function createMcpServer(): McpServer {
     async ({ query, maxResults, view }) => {
       try {
         const limit = maxResults ?? 8;
-        const videos = await searchChannelVideos(query, limit);
 
-        // Local transcript search: catches a video whose spoken content
-        // actually answers the question even when its title/description/
-        // tags don't share any of the query's words — something YouTube's
-        // own search.list can never do, since it doesn't index speech at
-        // all. Any match not already in the keyword-search results gets
-        // fetched and prepended, so a content-verified answer surfaces
-        // even when keyword ranking alone would have missed or buried it.
-        const existingIds = new Set(videos.map((v) => v.videoId));
-        const localMatches = findTranscriptMatches(query, TRANSCRIPTS, MAX_TRANSCRIPT_BOOSTED).filter(
-          (m) => !existingIds.has(m.videoId),
-        );
-        let boosted: VideoResult[] = [];
-        if (localMatches.length > 0) {
+        // Check for a decisive transcript match BEFORE running the
+        // keyword search — if one video's content coverage clearly beats
+        // the rest, that's the whole answer: return just that one video,
+        // no keyword-search call needed at all (saves the 100-quota-unit
+        // search.list call too).
+        const topMatches = findTranscriptMatches(query, TRANSCRIPTS, 2);
+        const [top, runnerUp] = topMatches;
+        const isDecisive =
+          !!top && top.score >= DECISIVE_MIN_SCORE && (!runnerUp || top.score >= runnerUp.score * DECISIVE_MARGIN);
+
+        let combined: VideoResult[] = [];
+        if (isDecisive) {
           try {
-            boosted = await getVideosByIds(localMatches.map((m) => m.videoId));
+            combined = await getVideosByIds([top.videoId]);
           } catch {
-            // Best-effort — the keyword-search results alone are still a
-            // fine response if this fails.
+            // Fall through to the normal search below if the direct
+            // lookup fails for some reason.
           }
         }
 
-        const combined = [...boosted, ...videos].slice(0, limit);
+        if (combined.length === 0) {
+          const videos = await searchChannelVideos(query, limit);
+
+          // Local transcript search: catches a video whose spoken content
+          // actually answers the question even when its title/description/
+          // tags don't share any of the query's words — something YouTube's
+          // own search.list can never do, since it doesn't index speech at
+          // all. Any match not already in the keyword-search results gets
+          // fetched and prepended, so a content-verified answer surfaces
+          // even when keyword ranking alone would have missed or buried it.
+          const existingIds = new Set(videos.map((v) => v.videoId));
+          const localMatches = findTranscriptMatches(query, TRANSCRIPTS, MAX_TRANSCRIPT_BOOSTED).filter(
+            (m) => !existingIds.has(m.videoId),
+          );
+          let boosted: VideoResult[] = [];
+          if (localMatches.length > 0) {
+            try {
+              boosted = await getVideosByIds(localMatches.map((m) => m.videoId));
+            } catch {
+              // Best-effort — the keyword-search results alone are still a
+              // fine response if this fails.
+            }
+          }
+
+          combined = [...boosted, ...videos].slice(0, limit);
+        }
 
         // Local lookup only — no network call, no Supadata dependency at
         // request time. TRANSCRIPTS is a pre-built dataset embedded at
