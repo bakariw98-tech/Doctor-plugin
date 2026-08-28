@@ -14,6 +14,7 @@ interface SearchResponse {
   error?: string;
 }
 
+const page = document.getElementById("page")!;
 const root = document.getElementById("root")!;
 const searchForm = document.getElementById("search-form") as HTMLFormElement;
 const searchInput = document.getElementById("search-input") as HTMLInputElement;
@@ -21,8 +22,16 @@ const searchButton = document.getElementById("search-button") as HTMLButtonEleme
 const statusEl = document.getElementById("status")!;
 const viewSelect = document.getElementById("view-select") as HTMLSelectElement;
 
+const VIEW_LABELS: Record<ViewOption, string> = {
+  auto: "Auto",
+  card: "Card",
+  spotlight: "Spotlight",
+  carousel: "Carousel",
+  grid: "Grid (fullscreen)",
+};
+
 viewSelect.innerHTML = VIEW_OPTIONS.map(
-  (option) => `<option value="${option}">${option === "auto" ? "Auto" : option}</option>`,
+  (option) => `<option value="${option}">${VIEW_LABELS[option]}</option>`,
 ).join("");
 
 let currentVideos: VideoResult[] = [];
@@ -32,6 +41,10 @@ function render() {
   renderVideos(root, currentVideos, currentView, (url) => {
     window.open(url, "_blank", "noopener,noreferrer");
   });
+  // Grid is the fullscreen layout in the real widget — there's no host to
+  // actually go fullscreen here, so just give it room to breathe as a
+  // visual stand-in.
+  page.classList.toggle("wide", currentView === "grid");
 }
 
 async function runSearch(query: string, view: ViewOption) {

@@ -66,10 +66,18 @@ export function renderVideos(
     return;
   }
 
-  if (view === "spotlight") {
-    renderSpotlight(root, videos, onOpenExternal);
-  } else {
-    renderCarousel(root, videos, onOpenExternal);
+  switch (view) {
+    case "card":
+      renderCard(root, videos, onOpenExternal);
+      break;
+    case "spotlight":
+      renderSpotlight(root, videos, onOpenExternal);
+      break;
+    case "grid":
+      renderGrid(root, videos, onOpenExternal);
+      break;
+    default:
+      renderCarousel(root, videos, onOpenExternal);
   }
 }
 
@@ -99,6 +107,70 @@ function renderCarousel(
   }
 
   root.appendChild(track);
+}
+
+// One large detail card, full-width thumbnail on top — the inline-card
+// case for a single best match. Uses whichever video is first; callers
+// should only reach this view with exactly one result (resolveView picks
+// it that way), but it degrades gracefully to just the first video if not.
+function renderCard(
+  root: HTMLElement,
+  videos: VideoResult[],
+  onOpenExternal: (url: string) => void,
+) {
+  const video = videos[0];
+  const item = document.createElement("article");
+  item.className = "card-detail";
+  item.innerHTML = `
+    <button class="card-detail-thumb" type="button" aria-label="Watch ${escapeHtml(video.title)}">
+      <img src="${video.thumbnail}" alt="" loading="lazy" />
+      ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
+      <span class="play-icon">▶</span>
+    </button>
+    <div class="card-detail-body">
+      <h3 class="card-detail-title">${escapeHtml(video.title)}</h3>
+      <p class="card-detail-meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
+      ${video.description ? `<p class="card-detail-desc">${escapeHtml(truncate(video.description, 220))}</p>` : ""}
+      <button class="watch-btn" type="button">Watch on YouTube ↗</button>
+    </div>
+  `;
+  item
+    .querySelector(".card-detail-thumb")!
+    .addEventListener("click", () => onOpenExternal(video.url));
+  item.querySelector(".watch-btn")!.addEventListener("click", () => onOpenExternal(video.url));
+  root.appendChild(item);
+}
+
+// Wrapping grid of thumbnails — the fullscreen layout, reached only via
+// the widget's own "View all" -> requestDisplayMode({mode:"fullscreen"})
+// affordance (src/mcp-app.ts), never returned directly by the tool. Reuses
+// the same card markup as the carousel, just in a grid container instead
+// of a horizontal-scroll one.
+function renderGrid(
+  root: HTMLElement,
+  videos: VideoResult[],
+  onOpenExternal: (url: string) => void,
+) {
+  const grid = document.createElement("div");
+  grid.className = "grid-track";
+
+  for (const video of videos) {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.innerHTML = `
+      <button class="thumb-btn" type="button" aria-label="Watch ${escapeHtml(video.title)}">
+        <img src="${video.thumbnail}" alt="" loading="lazy" />
+        ${video.duration ? `<span class="duration">${escapeHtml(video.duration)}</span>` : ""}
+        <span class="play-icon">▶</span>
+      </button>
+      <h3 class="title">${escapeHtml(video.title)}</h3>
+      <p class="meta">${escapeHtml(video.channelTitle)} · ${formatDate(video.publishedAt)}</p>
+    `;
+    card.querySelector(".thumb-btn")!.addEventListener("click", () => onOpenExternal(video.url));
+    grid.appendChild(card);
+  }
+
+  root.appendChild(grid);
 }
 
 // Stacked, larger cards with a description snippet — good for a small

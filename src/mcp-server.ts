@@ -42,13 +42,15 @@ export function createMcpServer(): McpServer {
           .optional()
           .describe("How many videos to return (default 8, max 20)."),
         view: z
-          .enum(["auto", "carousel", "spotlight"])
+          .enum(["auto", "card", "spotlight", "carousel", "grid"])
           .optional()
           .describe(
-            "Layout for the results. 'carousel' is a horizontal scroller (good for browsing many " +
-              "matches); 'spotlight' is a stacked list with a description snippet per video (good for " +
-              "a small number of best matches). 'auto' (default) picks spotlight for 3 or fewer " +
-              "results and carousel otherwise.",
+            "Layout for the results. 'card' is one large detail card (best for a single top match); " +
+              "'spotlight' is a stacked list with a description snippet per video (best for a small " +
+              "number of best matches); 'carousel' is a horizontal scroller (best for browsing many " +
+              "matches); 'grid' is a wrapping grid, normally only reached via the widget's own " +
+              "fullscreen affordance. 'auto' (default) picks card for 1 result, spotlight for 2-3, " +
+              "and carousel for more.",
           ),
       },
       _meta: {
