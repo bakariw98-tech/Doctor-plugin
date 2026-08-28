@@ -1,35 +1,30 @@
 {
   "artboards": [
-    { "file": "SingleCard.dc.html", "title": "Card — one strong match", "x": 0, "y": 0, "w": 460, "h": 486 },
-    { "file": "Main.dc.html", "title": "Spotlight — a few good options", "x": 560, "y": 0, "w": 460, "h": 486 },
-    { "file": "Carousel.dc.html", "title": "Carousel — skim many", "x": 0, "y": 626, "w": 660, "h": 300 },
-    { "file": "Grid.dc.html", "title": "Grid — fullscreen browse", "x": 760, "y": 626, "w": 900, "h": 560 }
+    { "file": "Main.dc.html", "title": "One — the thumbnail is the whole widget", "x": 0, "y": 0, "w": 620, "h": 450 },
+    { "file": "Few.dc.html", "title": "Few — sized to fit", "x": 720, "y": 0, "w": 620, "h": 250 },
+    { "file": "Carousel.dc.html", "title": "Many — one size, scrolls", "x": 0, "y": 570, "w": 620, "h": 230 },
+    { "file": "Grid.dc.html", "title": "Fullscreen — same tile, wrapped", "x": 720, "y": 570, "w": 900, "h": 360 }
   ],
   "annotations": [
     {
-      "id": "thesis",
-      "x": 0, "y": -186, "w": 460,
-      "text": "THESIS: the assistant hands you options and gets out of the way.\n\nEvery element has to earn its place against one question — does this make the click easier?"
+      "id": "split",
+      "x": 0, "y": -210, "w": 620,
+      "text": "THE DIVISION OF LABOR\n\nAgent: every word. Which one, why, how long, what's different about it.\n\nWidget: thumbnails. Nothing else — no title, no date, no channel, no snippet, no frame.\n\nThe prose on each artboard is real assistant phrasing, not filler. Retype it on the canvas to hear other wordings."
     },
     {
-      "id": "removed",
-      "x": 560, "y": -186, "w": 460,
-      "text": "REMOVED, and why:\n\n· Search box — the chat already is the search box. A second field competes with it and makes you retype.\n· Channel name per card — every result is the same doctor. Said once up top instead of 6 times.\n· Card borders/boxes — thumbnails are the content; chrome was competing with them.\n· \"Watch on YouTube\" button — the whole card is the tap target. Two affordances for one action is a hesitation."
+      "id": "collapse",
+      "x": 720, "y": -210, "w": 620,
+      "text": "THIS COLLAPSES THE VIEW SYSTEM\n\nOnce the widget holds no text, \"card\" vs \"spotlight\" vs \"carousel\" stop being different components — they're one strip of thumbnails at different sizes:\n\n1 → full width · 2–3 → split to fit · 4+ → fixed 172px, scrolls · fullscreen → same tile, wrapped\n\nSo the four view modes could become one responsive component. Worth deciding before I write the code — it deletes a lot of it."
     },
     {
-      "id": "reason",
-      "x": 1080, "y": 0, "w": 300,
-      "text": "REASON SLOT (built, not filled)\n\nEach layout is composed so a one-line \"why this matched\" drops in under the title with no re-layout.\n\nLeft empty today on purpose — with only titles and search metadata, any reason text would be invented confidence. It gets filled when the system actually understands the videos."
+      "id": "chip",
+      "x": 1400, "y": 0, "w": 300,
+      "text": "THE ONE THING I KEPT\n\nDuration. It rides on the image rather than around it, so it costs no layout, and the agent can't recite six durations in a sentence.\n\nIf you want it gone, the widget becomes literally just pictures — say the word."
     },
     {
-      "id": "duration",
-      "x": 0, "y": 966, "w": 660,
-      "text": "DURATION IS PROMOTED. Real results run 0:24 next to 3:29 next to hour-long interviews, so \"do I have time for this right now\" is the sharpest filter available. Tabular numerals, always legible over any thumbnail."
-    },
-    {
-      "id": "hover",
-      "x": 1700, "y": 626, "w": 300,
-      "text": "Play + scrim appear on hover only. Resting state is thumbnail and words — nothing decorative sitting there while you read.\n\nHover the cards; the states are live."
+      "id": "a11y",
+      "x": 0, "y": 880, "w": 620,
+      "text": "Titles aren't deleted, just not drawn — each thumbnail carries its title in aria-label, so screen readers announce the video instead of \"link, image\". Visually absent, semantically present."
     }
   ],
   "launch": { "view": "canvas" }

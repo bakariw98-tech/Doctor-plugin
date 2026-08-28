@@ -9,26 +9,20 @@
 <helmet>
   <style>
     :root{
-      --page:   oklch(0.995 0.002 60);
-      --text:   oklch(0.24 0.008 60);
-      --muted:  oklch(0.52 0.012 60);
-      --faint:  oklch(0.68 0.010 60);
-      --hair:   oklch(0.91 0.006 60);
-      --hover:  oklch(0.965 0.005 60);
-      --accent: oklch(0.55 0.14 45);
-      --chip:   oklch(0.17 0.01 60 / 0.88);
-      --shadow: 0 1px 2px oklch(0.2 0.01 60 / 0.06), 0 6px 16px oklch(0.2 0.01 60 / 0.07);
+      --page:  oklch(0.995 0.002 60);
+      --text:  oklch(0.26 0.008 60);
+      --chip:  oklch(0.17 0.01 60 / 0.88);
+      --rest:  0 1px 2px oklch(0.2 0.01 60 / 0.07), 0 4px 12px oklch(0.2 0.01 60 / 0.07);
+      --lift:  0 2px 4px oklch(0.2 0.01 60 / 0.10), 0 12px 28px oklch(0.2 0.01 60 / 0.13);
+      --ring:  oklch(0.55 0.14 45);
     }
     .dark{
-      --page:   oklch(0.185 0.006 60);
-      --text:   oklch(0.96 0.004 60);
-      --muted:  oklch(0.70 0.012 60);
-      --faint:  oklch(0.50 0.010 60);
-      --hair:   oklch(0.30 0.008 60);
-      --hover:  oklch(0.25 0.008 60);
-      --accent: oklch(0.74 0.13 55);
-      --chip:   oklch(0.12 0.01 60 / 0.90);
-      --shadow: 0 1px 2px oklch(0 0 0 / 0.30), 0 6px 16px oklch(0 0 0 / 0.34);
+      --page:  oklch(0.185 0.006 60);
+      --text:  oklch(0.93 0.004 60);
+      --chip:  oklch(0.12 0.01 60 / 0.90);
+      --rest:  0 1px 2px oklch(0 0 0 / 0.30), 0 4px 12px oklch(0 0 0 / 0.32);
+      --lift:  0 2px 4px oklch(0 0 0 / 0.38), 0 12px 28px oklch(0 0 0 / 0.44);
+      --ring:  oklch(0.74 0.13 55);
     }
     *{ box-sizing: border-box; }
     body{
@@ -38,35 +32,32 @@
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    a{ color: var(--accent); text-decoration: none; }
-    a:hover{ color: var(--accent); }
+    a{ color: var(--ring); text-decoration: none; }
+    a:hover{ color: var(--ring); }
 
-    /* Attribution: the channel is named ONCE, not on every card. */
-    .attrib{
-      display: flex; align-items: center; gap: 7px;
-      font-size: 12.5px; font-weight: 500; color: var(--faint);
-      letter-spacing: 0.002em; margin: 0 0 14px 2px;
+    /* The agent's own message. Host-rendered prose — this is where every
+       word now lives. The widget below it holds no text at all. */
+    .say{
+      font-size: 15px; line-height: 1.62; letter-spacing: -0.002em;
+      color: var(--text); text-wrap: pretty; margin: 0 0 16px;
+      max-width: 62ch;
     }
-    .attrib .dot{ width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.55; }
 
-    /* One tap target per video. No inner buttons competing with it. */
-    .hit{
-      display: block; color: inherit; text-decoration: none;
-      border-radius: 12px; outline: none;
-      transition: background 140ms ease, transform 140ms ease;
-    }
-    .hit:hover{ background: var(--hover); }
-    .hit:focus-visible{ box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--accent); }
-
+    /* THE ENTIRE WIDGET. A thumbnail is the whole component: no frame,
+       no surface, no label. Title rides in aria-label for screen readers. */
     .shot{
-      position: relative; display: block; width: 100%;
+      position: relative; display: block; flex: 0 0 auto;
       aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
-      background: oklch(0.5 0.01 60); box-shadow: var(--shadow);
+      background: oklch(0.5 0.01 60);
+      box-shadow: var(--rest); outline: none;
+      transition: box-shadow 160ms ease, transform 160ms ease;
     }
     .shot img{ width: 100%; height: 100%; object-fit: cover; display: block; }
+    .shot:hover{ transform: translateY(-2px); box-shadow: var(--lift); }
+    .shot:focus-visible{ box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--ring); }
 
-    /* Duration is a primary decision signal here: 0:24 and 3:29 are
-       different commitments, so it reads at a glance on every surface. */
+    /* Kept: it sits ON the image, adds no layout, and the agent cannot
+       recite eight durations in a sentence. Easy to remove if unwanted. */
     .dur{
       position: absolute; right: 6px; bottom: 6px;
       background: var(--chip); color: #fff;
@@ -75,98 +66,43 @@
       padding: 4px 6px; border-radius: 5px;
       backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     }
-
-    /* Play + external cue stay hidden until intent, so resting state is
-       just thumbnail and words. */
     .cue{
       position: absolute; inset: 0; display: grid; place-items: center;
-      background: oklch(0.15 0.01 60 / 0.30);
-      opacity: 0; transition: opacity 140ms ease;
+      background: oklch(0.15 0.01 60 / 0.28);
+      opacity: 0; transition: opacity 160ms ease;
     }
-    .hit:hover .cue{ opacity: 1; }
+    .shot:hover .cue{ opacity: 1; }
     .cue svg{ filter: drop-shadow(0 1px 3px oklch(0 0 0 / 0.5)); }
 
-    .ttl{ font-weight: 600; color: var(--text); text-wrap: pretty; margin: 0; }
-    .meta{
-      font-size: 12px; font-weight: 500; color: var(--faint);
-      font-variant-numeric: tabular-nums; margin: 0;
-    }
-    .snip{
-      font-size: 13px; line-height: 1.5; color: var(--muted);
-      text-wrap: pretty; margin: 0;
-      display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .clamp2{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-
-    .row{ display: flex; gap: 13px; padding: 8px; align-items: flex-start; }
-    .row .shot{ flex: 0 0 164px; width: 164px; }
-    .row .body{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding-top: 1px; }
-    .row .ttl{ font-size: 15.5px; line-height: 1.33; letter-spacing: -0.009em; }
+    .one .shot{ width: 100%; }
   </style>
 </helmet>
-<div class="{{themeClass}}" style="padding: 20px 18px;">
-  <div class="attrib">
-    <span>Anthony Chaffee MD</span>
-    <span class="dot"></span>
-    <span>3 videos</span>
-  </div>
+<div class="{{themeClass}}" style="padding: 20px;">
+  <p class="say">He answers that one pretty directly &mdash; his point is that protein restriction is what actually triggers autophagy, not the fasting itself. It&rsquo;s under a minute.</p>
 
-  <div style="display: flex; flex-direction: column; gap: 6px;">
-    <sc-for list="{{videos}}" as="v" hint-placeholder-count="3">
-      <a class="hit row" href="{{v.url}}" target="_blank" rel="noopener">
-        <span class="shot">
-          <img src="{{v.thumb}}" alt="">
-          <span class="cue">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
-              <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
-            </svg>
-          </span>
-          <span class="dur">{{v.duration}}</span>
-        </span>
-        <span class="body">
-          <h3 class="ttl clamp2">{{v.title}}</h3>
-          <!-- REASON SLOT: when the system understands video contents, the
-               one-line "why this matched" goes here, above the snippet.
-               Left out today rather than fabricated from title matching. -->
-          <p class="snip" style="-webkit-line-clamp: 2;">{{v.snippet}}</p>
-          <p class="meta">{{v.date}}</p>
-        </span>
-      </a>
+  <div class="one">
+    <sc-for list="{{videos}}" as="v" hint-placeholder-count="1">
+      <a class="shot" href="{{v.url}}" target="_blank" rel="noopener" aria-label="{{v.title}}">
+            <img src="{{v.thumb}}" alt="">
+            <span class="cue">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
+                <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
+              </svg>
+            </span>
+            <span class="dur">{{v.duration}}</span>
+          </a>
     </sc-for>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":460,"height":486}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":620,"height":450}}'>
 class Component extends DCLogic {
   renderVals() {
     return {
       themeClass: this.props.dark ? 'dark' : '',
       videos: [
-        {
-          title: "You DON'T Need To Fast For AUTOPHAGY!",
-          thumb: "no-fast-autophagy.jpg",
-          duration: "0:57",
-          date: "Apr 1, 2024",
-          snippet: "Insulin is not just about blood sugar control. It is a very busy hormone and affects over 100 different processes in your body.",
-          url: "https://www.youtube.com/watch?v=vhyPlX27ztw"
-        },
-        {
-          title: "Benefits Of OMAD & Fasting On A Carnivore Diet?",
-          thumb: "omad-fasting.jpg",
-          duration: "3:29",
-          date: "Nov 8, 2023",
-          snippet: "Do you need to fast while doing a carnivore diet, and what does one-meal-a-day actually change metabolically?",
-          url: "https://www.youtube.com/watch?v=D5jTJj_FbC4"
-        },
-        {
-          title: "FASTING STATE Is Our PRIMARY Metabolic State!",
-          thumb: "fasting-state.jpg",
-          duration: "0:55",
-          date: "Nov 25, 2023",
-          snippet: "Why the fasted state — not the fed state — is the metabolic baseline humans evolved to run on.",
-          url: "https://www.youtube.com/watch?v=d9eAuHhCV8A"
-        }
+        { title: "You DON'T Need To Fast For AUTOPHAGY!", thumb: "no-fast-autophagy.jpg", duration: "0:57", url: "https://www.youtube.com/watch?v=vhyPlX27ztw" }
       ]
     };
   }

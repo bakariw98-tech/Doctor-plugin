@@ -74,24 +74,19 @@
     .shot:hover .cue{ opacity: 1; }
     .cue svg{ filter: drop-shadow(0 1px 3px oklch(0 0 0 / 0.5)); }
 
-    .many{
-      display: flex; gap: 10px; overflow-x: auto;
-      scroll-snap-type: x mandatory; padding: 4px 20px 8px; margin: -4px -20px 0;
-      scrollbar-width: none;
-    }
-    .many::-webkit-scrollbar{ display: none; }
-    .many .shot{ flex: 0 0 172px; width: 172px; scroll-snap-align: start; }
+    .few{ display: flex; gap: 10px; }
+    .few .shot{ flex: 1 1 0; min-width: 0; }
   </style>
 </helmet>
 <div class="{{themeClass}}" style="padding: 20px;">
-  <p class="say">He talks about fasting a lot &mdash; here are six, closest first. The short ones are clips; the three-minute one is where he lays out the whole reasoning.</p>
+  <p class="say">He&rsquo;s come at this three ways. The first is the 20-second version, the second gets into why insulin matters more than the fasting window itself, and the last is his fuller answer from a carnivore Q&amp;A.</p>
 
-  <div class="many">
-    <sc-for list="{{videos}}" as="v" hint-placeholder-count="6">
+  <div class="few">
+    <sc-for list="{{videos}}" as="v" hint-placeholder-count="3">
       <a class="shot" href="{{v.url}}" target="_blank" rel="noopener" aria-label="{{v.title}}">
             <img src="{{v.thumb}}" alt="">
             <span class="cue">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
                 <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
               </svg>
@@ -102,7 +97,7 @@
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":620,"height":230}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":620,"height":250}}'>
 class Component extends DCLogic {
   renderVals() {
     return {
@@ -110,10 +105,7 @@ class Component extends DCLogic {
       videos: [
         { title: "You Don't Need to Fast for Autophagy — Just Do THIS", thumb: "just-do-this.jpg", duration: "0:24", url: "https://www.youtube.com/watch?v=irOV-aEeqDc" },
         { title: "You DON'T Need To Fast For AUTOPHAGY!", thumb: "no-fast-autophagy.jpg", duration: "0:57", url: "https://www.youtube.com/watch?v=vhyPlX27ztw" },
-        { title: "Autophagy Does Not Occur Because Of Fasting, But Because Of THIS", thumb: "autophagy-this.jpg", duration: "0:42", url: "https://www.youtube.com/watch?v=UHVyeBU0xMQ" },
-        { title: "Benefits Of OMAD & Fasting On A Carnivore Diet?", thumb: "omad-fasting.jpg", duration: "3:29", url: "https://www.youtube.com/watch?v=D5jTJj_FbC4" },
-        { title: "FASTING STATE Is Our PRIMARY Metabolic State!", thumb: "fasting-state.jpg", duration: "0:55", url: "https://www.youtube.com/watch?v=d9eAuHhCV8A" },
-        { title: "You'll Have To RETHINK FASTING After Watching This!", thumb: "rethink-fasting.jpg", duration: "1:08", url: "https://www.youtube.com/watch?v=89EISwhgLaw" }
+        { title: "Benefits Of OMAD & Fasting On A Carnivore Diet?", thumb: "omad-fasting.jpg", duration: "3:29", url: "https://www.youtube.com/watch?v=D5jTJj_FbC4" }
       ]
     };
   }
