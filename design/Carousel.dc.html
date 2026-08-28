@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root{
+      --page:   oklch(0.995 0.002 60);
+      --text:   oklch(0.24 0.008 60);
+      --muted:  oklch(0.52 0.012 60);
+      --faint:  oklch(0.68 0.010 60);
+      --hair:   oklch(0.91 0.006 60);
+      --hover:  oklch(0.965 0.005 60);
+      --accent: oklch(0.55 0.14 45);
+      --chip:   oklch(0.17 0.01 60 / 0.88);
+      --shadow: 0 1px 2px oklch(0.2 0.01 60 / 0.06), 0 6px 16px oklch(0.2 0.01 60 / 0.07);
+    }
+    .dark{
+      --page:   oklch(0.185 0.006 60);
+      --text:   oklch(0.96 0.004 60);
+      --muted:  oklch(0.70 0.012 60);
+      --faint:  oklch(0.50 0.010 60);
+      --hair:   oklch(0.30 0.008 60);
+      --hover:  oklch(0.25 0.008 60);
+      --accent: oklch(0.74 0.13 55);
+      --chip:   oklch(0.12 0.01 60 / 0.90);
+      --shadow: 0 1px 2px oklch(0 0 0 / 0.30), 0 6px 16px oklch(0 0 0 / 0.34);
+    }
+    *{ box-sizing: border-box; }
+    body{
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a{ color: var(--accent); text-decoration: none; }
+    a:hover{ color: var(--accent); }
+
+    /* Attribution: the channel is named ONCE, not on every card. */
+    .attrib{
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 500; color: var(--faint);
+      letter-spacing: 0.002em; margin: 0 0 14px 2px;
+    }
+    .attrib .dot{ width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.55; }
+
+    /* One tap target per video. No inner buttons competing with it. */
+    .hit{
+      display: block; color: inherit; text-decoration: none;
+      border-radius: 12px; outline: none;
+      transition: background 140ms ease, transform 140ms ease;
+    }
+    .hit:hover{ background: var(--hover); }
+    .hit:focus-visible{ box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--accent); }
+
+    .shot{
+      position: relative; display: block; width: 100%;
+      aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
+      background: oklch(0.5 0.01 60); box-shadow: var(--shadow);
+    }
+    .shot img{ width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    /* Duration is a primary decision signal here: 0:24 and 3:29 are
+       different commitments, so it reads at a glance on every surface. */
+    .dur{
+      position: absolute; right: 6px; bottom: 6px;
+      background: var(--chip); color: #fff;
+      font-size: 11.5px; font-weight: 600; line-height: 1;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.012em;
+      padding: 4px 6px; border-radius: 5px;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    }
+
+    /* Play + external cue stay hidden until intent, so resting state is
+       just thumbnail and words. */
+    .cue{
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: oklch(0.15 0.01 60 / 0.30);
+      opacity: 0; transition: opacity 140ms ease;
+    }
+    .hit:hover .cue{ opacity: 1; }
+    .cue svg{ filter: drop-shadow(0 1px 3px oklch(0 0 0 / 0.5)); }
+
+    .ttl{ font-weight: 600; color: var(--text); text-wrap: pretty; margin: 0; }
+    .meta{
+      font-size: 12px; font-weight: 500; color: var(--faint);
+      font-variant-numeric: tabular-nums; margin: 0;
+    }
+    .snip{
+      font-size: 13px; line-height: 1.5; color: var(--muted);
+      text-wrap: pretty; margin: 0;
+      display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .clamp2{ display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+    .strip{
+      display: flex; gap: 4px; overflow-x: auto; scroll-snap-type: x mandatory;
+      padding: 0 18px 6px; margin: 0 -18px;
+      scrollbar-width: none;
+    }
+    .strip::-webkit-scrollbar{ display: none; }
+    .tile{ flex: 0 0 186px; width: 186px; scroll-snap-align: start; padding: 6px; }
+    .tile .ttl{ font-size: 13.5px; line-height: 1.36; letter-spacing: -0.005em; margin-top: 9px; }
+    .tile .meta{ margin-top: 5px; font-size: 11.5px; }
+    /* Right-edge fade is the only affordance saying "keep scrolling". */
+    .edge{
+      position: absolute; top: 0; right: 0; width: 44px; height: 100%;
+      background: linear-gradient(to right, transparent, var(--page));
+      pointer-events: none;
+    }
+  </style>
+</helmet>
+<div class="{{themeClass}}" style="padding: 20px 18px;">
+  <div class="attrib">
+    <span>Anthony Chaffee MD</span>
+    <span class="dot"></span>
+    <span>8 videos</span>
+  </div>
+
+  <div style="position: relative;">
+    <div class="strip">
+      <sc-for list="{{videos}}" as="v" hint-placeholder-count="5">
+        <a class="hit tile" href="{{v.url}}" target="_blank" rel="noopener">
+          <span class="shot">
+            <img src="{{v.thumb}}" alt="">
+            <span class="cue">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
+                <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
+              </svg>
+            </span>
+            <span class="dur">{{v.duration}}</span>
+          </span>
+          <h3 class="ttl clamp2">{{v.title}}</h3>
+          <p class="meta">{{v.date}}</p>
+        </a>
+      </sc-for>
+    </div>
+    <span class="edge"></span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":660,"height":300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      themeClass: this.props.dark ? 'dark' : '',
+      videos: [
+        { title: "Autophagy Does Not Occur Because Of Fasting, But Because Of THIS", thumb: "autophagy-this.jpg", duration: "0:42", date: "Apr 12, 2024", url: "https://www.youtube.com/watch?v=UHVyeBU0xMQ" },
+        { title: "You DON'T Need To Fast For AUTOPHAGY!", thumb: "no-fast-autophagy.jpg", duration: "0:57", date: "Apr 1, 2024", url: "https://www.youtube.com/watch?v=vhyPlX27ztw" },
+        { title: "You Don't Need to Fast for Autophagy — Just Do THIS", thumb: "just-do-this.jpg", duration: "0:24", date: "Jul 29, 2025", url: "https://www.youtube.com/watch?v=irOV-aEeqDc" },
+        { title: "Benefits Of OMAD & Fasting On A Carnivore Diet?", thumb: "omad-fasting.jpg", duration: "3:29", date: "Nov 8, 2023", url: "https://www.youtube.com/watch?v=D5jTJj_FbC4" },
+        { title: "FASTING STATE Is Our PRIMARY Metabolic State!", thumb: "fasting-state.jpg", duration: "0:55", date: "Nov 25, 2023", url: "https://www.youtube.com/watch?v=d9eAuHhCV8A" },
+        { title: "You'll Have To RETHINK FASTING After Watching This!", thumb: "rethink-fasting.jpg", duration: "1:08", date: "Apr 2, 2024", url: "https://www.youtube.com/watch?v=89EISwhgLaw" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

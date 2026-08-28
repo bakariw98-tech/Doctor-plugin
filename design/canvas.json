@@ -1,0 +1,36 @@
+{
+  "artboards": [
+    { "file": "SingleCard.dc.html", "title": "Card — one strong match", "x": 0, "y": 0, "w": 460, "h": 486 },
+    { "file": "Main.dc.html", "title": "Spotlight — a few good options", "x": 560, "y": 0, "w": 460, "h": 486 },
+    { "file": "Carousel.dc.html", "title": "Carousel — skim many", "x": 0, "y": 626, "w": 660, "h": 300 },
+    { "file": "Grid.dc.html", "title": "Grid — fullscreen browse", "x": 760, "y": 626, "w": 900, "h": 560 }
+  ],
+  "annotations": [
+    {
+      "id": "thesis",
+      "x": 0, "y": -186, "w": 460,
+      "text": "THESIS: the assistant hands you options and gets out of the way.\n\nEvery element has to earn its place against one question — does this make the click easier?"
+    },
+    {
+      "id": "removed",
+      "x": 560, "y": -186, "w": 460,
+      "text": "REMOVED, and why:\n\n· Search box — the chat already is the search box. A second field competes with it and makes you retype.\n· Channel name per card — every result is the same doctor. Said once up top instead of 6 times.\n· Card borders/boxes — thumbnails are the content; chrome was competing with them.\n· \"Watch on YouTube\" button — the whole card is the tap target. Two affordances for one action is a hesitation."
+    },
+    {
+      "id": "reason",
+      "x": 1080, "y": 0, "w": 300,
+      "text": "REASON SLOT (built, not filled)\n\nEach layout is composed so a one-line \"why this matched\" drops in under the title with no re-layout.\n\nLeft empty today on purpose — with only titles and search metadata, any reason text would be invented confidence. It gets filled when the system actually understands the videos."
+    },
+    {
+      "id": "duration",
+      "x": 0, "y": 966, "w": 660,
+      "text": "DURATION IS PROMOTED. Real results run 0:24 next to 3:29 next to hour-long interviews, so \"do I have time for this right now\" is the sharpest filter available. Tabular numerals, always legible over any thumbnail."
+    },
+    {
+      "id": "hover",
+      "x": 1700, "y": 626, "w": 300,
+      "text": "Play + scrim appear on hover only. Resting state is thumbnail and words — nothing decorative sitting there while you read.\n\nHover the cards; the states are live."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
