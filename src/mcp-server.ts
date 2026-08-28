@@ -18,6 +18,17 @@ import { TRANSCRIPTS } from "./generated/transcripts.js";
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
 export const RESOURCE_URI = "ui://search-doctor-videos/mcp-app.html";
 
+// Total transcript characters allowed in one response, across every video
+// returned. Each stored transcript can run up to 15000 chars on its own
+// (see TRANSCRIPT_LIMIT in transcript.ts) — fine for one video, but
+// maxResults defaults to 8, and several long transcripts in the same
+// response could push past what a host is willing to accept in a single
+// tool result. This budget is shared out below rather than applied as a
+// flat per-video cap, so a search that surfaces one long relevant video
+// alongside several short ones doesn't truncate the one that matters just
+// because of a fixed per-video ceiling.
+const TOTAL_TRANSCRIPT_BUDGET = 24000;
+
 // Some MCP hosts only feed the model this tool's `content` text — the
 // structured `structuredContent.videos` (full description, tags,
 // transcript) is delivered to the widget's iframe, not necessarily back
@@ -31,16 +42,39 @@ function buildResultText(query: string, videos: VideoResult[]): string {
     return `No videos found about "${query}" on this channel. Try a different search term.`;
   }
 
-  const entries = videos.map((v) => {
+  // Give every video an equal share of the total budget first; a video
+  // with a shorter transcript (or none) leaves its unused share for the
+  // others, distributed evenly across whoever still has more to give.
+  const lengths = videos.map((v) => v.transcript?.length ?? 0);
+  let remainingBudget = TOTAL_TRANSCRIPT_BUDGET;
+  let remainingVideos = videos.length;
+  const allotted = lengths.map((len) => {
+    const share = Math.floor(remainingBudget / remainingVideos);
+    const used = Math.min(len, share);
+    remainingBudget -= used;
+    remainingVideos -= 1;
+    return used;
+  });
+
+  const entries = videos.map((v, i) => {
     const lines = [`"${v.title}" (${v.duration ?? "?"}, published ${v.publishedAt.slice(0, 10)})`];
     if (v.description) lines.push(`Description: ${v.description}`);
     if (v.tags?.length) lines.push(`Tags: ${v.tags.join(", ")}`);
-    lines.push(
-      v.transcript
-        ? `Transcript (has '[MM:SS]' markers roughly every 20s — cite the nearest one when the ` +
-            `answer is specific): ${v.transcript}`
-        : "Transcript: not available for this video.",
-    );
+    if (v.transcript) {
+      const cap = allotted[i];
+      const shown = v.transcript.slice(0, cap);
+      const truncatedNote =
+        cap < v.transcript.length
+          ? " [cut off here to fit this reply — there is more transcript after this point that " +
+            "isn't shown; say so rather than guessing about anything past it]"
+          : "";
+      lines.push(
+        `Transcript (has '[MM:SS]' markers roughly every 20s — cite the nearest one when the ` +
+          `answer is specific): ${shown}${truncatedNote}`,
+      );
+    } else {
+      lines.push("Transcript: not available for this video.");
+    }
     return lines.join("\n");
   });
 

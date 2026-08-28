@@ -32,11 +32,17 @@
 
 const API_BASE = "https://api.supadata.ai/v1";
 
-// Transcripts can run to thousands of words; this bounds what actually
-// gets handed to the model (and billed in its context), same spirit as
-// the description cap in youtube.ts but roomier since this is the
-// primary substrate for judging content, not a supporting snippet.
-const TRANSCRIPT_LIMIT = 3000;
+// Transcripts can run to thousands of words; this bounds what gets stored
+// per video. Was 3000 (~2-3 minutes of dense speech) — found live to be
+// far too tight: a 16-minute video got cut off before reaching content
+// well within the first half, so a question answered later in a longer
+// video silently had no data to draw from. 15000 (~12-15 minutes of
+// speech) covers the large majority of this channel's videos in full;
+// very long streams (an hour-plus Q&A) still get cut, but that's a much
+// smaller gap than before. mcp-server.ts applies its own tighter budget
+// per response on top of this, since several long transcripts in one
+// reply could otherwise blow past what a host will accept.
+const TRANSCRIPT_LIMIT = 15000;
 
 // The point of pulling transcripts at all: someone can ask a hyper-specific
 // question ("what did he say about how much protein to eat?") and the model
