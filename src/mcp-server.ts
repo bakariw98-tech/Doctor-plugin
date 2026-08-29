@@ -351,7 +351,7 @@ export function createMcpServer(): McpServer {
           structuredContent: {
             kind: "lead_form" as const,
             topic,
-            magnet: { title: config.title, description: config.description },
+            magnet: { title: config.title, description: config.description, coverImageUrl: config.coverImageUrl },
             questions: questions.map((q) => ({ fieldKey: q.fieldKey, label: q.label, required: q.required })),
           },
         };

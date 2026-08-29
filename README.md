@@ -163,6 +163,13 @@ Search works with none of this set up — `offer_lead_magnet`, `submit_lead`,
 and `/admin` are the only things that need it, and they fail with a clear
 message (not a crash) if it's missing.
 
+**Want to see/try the offer + form + dashboard before setting up a real
+database?** Set `DEMO_MODE=1` in `.env` and skip straight to running the
+server — everything works immediately against an in-process store instead
+of Postgres. Nothing is actually saved anywhere permanent (it resets on
+restart), so this is for previewing the UI and flow only, never for real
+leads. Unset it once `DATABASE_URL` is configured for real.
+
 1. **Create a Supabase project** — at [supabase.com](https://supabase.com)
    (free tier is fine). This is a manual, one-time step; nothing in this
    repo can do it for you.

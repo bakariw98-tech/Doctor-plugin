@@ -17,14 +17,27 @@
 // Requires a Supabase project (supabase.com — free tier is fine) set up
 // once outside this repo; see .env.example and README.md. This module
 // creates the tables inside that database, not the database itself.
+//
+// DEMO_MODE=1 (see isDemoMode below) skips the database entirely and
+// keeps everything in an in-process Map instead — for trying out the
+// offer/form UI itself before a real database is wired up. Deliberately
+// opt-in (an explicit env var, not just "DATABASE_URL happens to be
+// unset") so a genuinely misconfigured deployment fails loudly instead of
+// silently pretending to collect leads it's actually throwing away every
+// cold start.
 import postgres from "postgres";
+
+function isDemoMode(): boolean {
+  return process.env.DEMO_MODE === "1";
+}
 
 function requireConnectionString(): string {
   const url = process.env.DATABASE_URL?.trim();
   if (!url) {
     throw new Error(
       "Set DATABASE_URL in the environment — create a Supabase project (supabase.com) and copy its " +
-        "connection string first. See .env.example.",
+        "connection string first (see .env.example) — or set DEMO_MODE=1 to try the UI without a " +
+        "database (leads won't be saved anywhere real; see the file header of src/db.ts).",
     );
   }
   return url;
@@ -54,6 +67,10 @@ export interface MagnetConfig {
   title: string;
   description: string;
   resourceUrl: string;
+  // Optional — a real image URL for the offer's cover art. Unset falls
+  // back to a generated icon-and-gradient treatment in the UI rather than
+  // a blank/broken image.
+  coverImageUrl: string | null;
 }
 
 export interface Question {
@@ -80,7 +97,29 @@ const DEFAULT_MAGNET: MagnetConfig = {
   title: "Free Guide",
   description: "A free resource related to what you searched for.",
   resourceUrl: "https://example.com/placeholder.pdf",
+  coverImageUrl: null,
 };
+
+// ---- Demo mode: in-process store, no database at all -------------------
+
+interface MemoryStore {
+  config: MagnetConfig;
+  questions: Question[];
+  leads: Lead[];
+  nextQuestionId: number;
+  nextLeadId: number;
+}
+
+let memoryStore: MemoryStore | null = null;
+
+function store(): MemoryStore {
+  if (!memoryStore) {
+    memoryStore = { config: { ...DEFAULT_MAGNET }, questions: [], leads: [], nextQuestionId: 1, nextLeadId: 1 };
+  }
+  return memoryStore;
+}
+
+// ---- Schema (real database only) ----------------------------------------
 
 // Memoized per warm process so repeated calls in the same serverless
 // instance don't re-run CREATE TABLE IF NOT EXISTS every time — but a
@@ -93,14 +132,17 @@ async function ensureSchemaUncached(): Promise<void> {
   const db = sql();
   await db`
     CREATE TABLE IF NOT EXISTS lead_magnet_config (
-      id           SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-      enabled      BOOLEAN NOT NULL DEFAULT true,
-      title        TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.title},
-      description  TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.description},
-      resource_url TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.resourceUrl},
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+      id             SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      enabled        BOOLEAN NOT NULL DEFAULT true,
+      title          TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.title},
+      description    TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.description},
+      resource_url   TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.resourceUrl},
+      cover_image_url TEXT,
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Older deployments may already have the table without this column.
+  await db`ALTER TABLE lead_magnet_config ADD COLUMN IF NOT EXISTS cover_image_url TEXT`;
   await db`INSERT INTO lead_magnet_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
 
   await db`
@@ -128,6 +170,7 @@ async function ensureSchemaUncached(): Promise<void> {
 }
 
 export function ensureSchema(): Promise<void> {
+  if (isDemoMode()) return Promise.resolve();
   if (!schemaReady) {
     schemaReady = ensureSchemaUncached().catch((err) => {
       // A failed attempt shouldn't be cached — the next call gets a fresh
@@ -144,26 +187,40 @@ function toMagnetConfig(row: {
   title: string;
   description: string;
   resource_url: string;
+  cover_image_url: string | null;
 }): MagnetConfig {
-  return { enabled: row.enabled, title: row.title, description: row.description, resourceUrl: row.resource_url };
+  return {
+    enabled: row.enabled,
+    title: row.title,
+    description: row.description,
+    resourceUrl: row.resource_url,
+    coverImageUrl: row.cover_image_url,
+  };
 }
 
 export async function getMagnetConfig(): Promise<MagnetConfig> {
+  if (isDemoMode()) return store().config;
   await ensureSchema();
-  const rows = await sql()`SELECT enabled, title, description, resource_url FROM lead_magnet_config WHERE id = 1`;
+  const rows = await sql()`
+    SELECT enabled, title, description, resource_url, cover_image_url FROM lead_magnet_config WHERE id = 1
+  `;
   return rows[0] ? toMagnetConfig(rows[0] as never) : DEFAULT_MAGNET;
 }
 
 export async function updateMagnetConfig(input: Partial<MagnetConfig>): Promise<MagnetConfig> {
+  if (isDemoMode()) {
+    store().config = { ...store().config, ...input };
+    return store().config;
+  }
   await ensureSchema();
   const current = await getMagnetConfig();
   const next = { ...current, ...input };
   const rows = await sql()`
     UPDATE lead_magnet_config
     SET enabled = ${next.enabled}, title = ${next.title}, description = ${next.description},
-        resource_url = ${next.resourceUrl}, updated_at = now()
+        resource_url = ${next.resourceUrl}, cover_image_url = ${next.coverImageUrl}, updated_at = now()
     WHERE id = 1
-    RETURNING enabled, title, description, resource_url
+    RETURNING enabled, title, description, resource_url, cover_image_url
   `;
   return toMagnetConfig(rows[0] as never);
 }
@@ -179,6 +236,7 @@ function toQuestion(row: {
 }
 
 export async function listQuestions(): Promise<Question[]> {
+  if (isDemoMode()) return [...store().questions].sort((a, b) => a.sortOrder - b.sortOrder);
   await ensureSchema();
   const rows = await sql()`
     SELECT id, field_key, label, required, sort_order FROM lead_form_questions ORDER BY sort_order, id
@@ -201,6 +259,24 @@ function slugify(label: string): string {
 }
 
 export async function addQuestion(input: { label: string; required: boolean }): Promise<Question> {
+  if (isDemoMode()) {
+    const s = store();
+    const base = slugify(input.label);
+    let fieldKey = base;
+    for (let suffix = 2; s.questions.some((q) => q.fieldKey === fieldKey); suffix++) {
+      fieldKey = `${base}_${suffix}`;
+    }
+    const question: Question = {
+      id: s.nextQuestionId++,
+      fieldKey,
+      label: input.label,
+      required: input.required,
+      sortOrder: s.questions.length,
+    };
+    s.questions.push(question);
+    return question;
+  }
+
   await ensureSchema();
   const db = sql();
   const base = slugify(input.label);
@@ -223,6 +299,11 @@ export async function addQuestion(input: { label: string; required: boolean }): 
 }
 
 export async function deleteQuestion(id: number): Promise<void> {
+  if (isDemoMode()) {
+    const s = store();
+    s.questions = s.questions.filter((q) => q.id !== id);
+    return;
+  }
   await ensureSchema();
   await sql()`DELETE FROM lead_form_questions WHERE id = ${id}`;
 }
@@ -233,6 +314,13 @@ export async function insertLead(input: {
   topic: string | null;
   answers: Record<string, string>;
 }): Promise<Lead> {
+  if (isDemoMode()) {
+    const s = store();
+    const lead: Lead = { id: s.nextLeadId++, ...input, createdAt: new Date().toISOString() };
+    s.leads.unshift(lead);
+    return lead;
+  }
+
   await ensureSchema();
   const rows = await sql()`
     INSERT INTO leads (email, name, topic, answers)
@@ -244,6 +332,7 @@ export async function insertLead(input: {
 }
 
 export async function listLeads(): Promise<Lead[]> {
+  if (isDemoMode()) return store().leads;
   await ensureSchema();
   const rows = await sql()`
     SELECT id, email, name, topic, answers, created_at FROM leads ORDER BY created_at DESC

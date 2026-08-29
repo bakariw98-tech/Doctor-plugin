@@ -13,9 +13,18 @@ export interface LeadFormQuestion {
 export interface LeadFormPayload {
   kind: "lead_form";
   topic: string;
-  magnet: { title: string; description: string };
+  magnet: { title: string; description: string; coverImageUrl?: string | null };
   questions: LeadFormQuestion[];
 }
+
+const COVER_ICON = `
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 3L4 7v6c0 4.4 3.4 8.4 8 9.9 4.6-1.5 8-5.5 8-9.9V7l-8-4z"
+      stroke="#fff" stroke-width="1.6" stroke-linejoin="round" fill="rgba(255,255,255,0.14)" />
+    <path d="M9 12.2l2.1 2.1L15.4 10" stroke="#fff" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+`;
 
 export interface SubmitResult {
   ok: boolean;
@@ -55,7 +64,13 @@ export function renderLeadForm(
     )
     .join("");
 
+  const cover = payload.magnet.coverImageUrl
+    ? `<div class="lead-cover"><img src="${escapeHtml(payload.magnet.coverImageUrl)}" alt="" /></div>`
+    : `<div class="lead-cover lead-cover-fallback">${COVER_ICON}</div>`;
+
   wrap.innerHTML = `
+    ${cover}
+    <div class="lead-body">
     <h2 class="lead-title">${escapeHtml(payload.magnet.title)}</h2>
     <p class="lead-desc">${escapeHtml(payload.magnet.description)}</p>
     <form class="lead-fields" novalidate>
@@ -71,6 +86,7 @@ export function renderLeadForm(
       <p class="lead-error" hidden></p>
       <button type="submit" class="lead-submit">Send it to me</button>
     </form>
+    </div>
   `;
   root.appendChild(wrap);
 
@@ -102,7 +118,10 @@ export function renderLeadForm(
 
     if (result.ok) {
       wrap.innerHTML = `
-        <p class="lead-success">Thanks — check your email for "${escapeHtml(payload.magnet.title)}".</p>
+        ${cover}
+        <div class="lead-body">
+          <p class="lead-success">✓ Thanks — check your email for "${escapeHtml(payload.magnet.title)}".</p>
+        </div>
       `;
     } else {
       submitBtn.disabled = false;
