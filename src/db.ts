@@ -138,15 +138,26 @@ function store(): MemoryStore {
 // exists only as an optional manual convenience/connectivity check).
 let schemaReady: Promise<void> | null = null;
 
+// TEMP DIAGNOSTIC (remove once the pgbouncer parameter-type issue is
+// confirmed fixed): runs each schema statement individually and logs
+// which one actually throws, plus the full Postgres error object — so far
+// every parameter has been explicitly cast and fetch_types disabled, yet
+// the "could not determine data type of parameter $1" error persists
+// unchanged in production, which means the failing statement isn't the
+// one currently assumed. This pinpoints it from real server logs instead
+// of guessing through more blind deploy cycles.
+async function step(db: ReturnType<typeof postgres>, label: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[db.ts schema step failed] ${label}`, JSON.stringify(err, Object.getOwnPropertyNames(err as object)));
+    throw err;
+  }
+}
+
 async function ensureSchemaUncached(): Promise<void> {
   const db = sql();
-  // The DEFAULT ... values below are cast explicitly (::text) rather than
-  // left as bare parameters — Postgres can't infer a parameter's type from
-  // a CREATE TABLE column DEFAULT clause the way it can from a normal
-  // DML WHERE/VALUES context, and going through Supabase's pgbouncer
-  // transaction pooler (prepare: false) surfaces that as "could not
-  // determine data type of parameter $1" instead of silently working.
-  await db`
+  await step(db, "create lead_magnet_config", () => db`
     CREATE TABLE IF NOT EXISTS lead_magnet_config (
       id             SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
       enabled        BOOLEAN NOT NULL DEFAULT true,
@@ -156,12 +167,12 @@ async function ensureSchemaUncached(): Promise<void> {
       cover_image_url TEXT,
       updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     )
-  `;
+  `);
   // Older deployments may already have the table without this column.
-  await db`ALTER TABLE lead_magnet_config ADD COLUMN IF NOT EXISTS cover_image_url TEXT`;
-  await db`INSERT INTO lead_magnet_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
+  await step(db, "alter cover_image_url", () => db`ALTER TABLE lead_magnet_config ADD COLUMN IF NOT EXISTS cover_image_url TEXT`);
+  await step(db, "seed row", () => db`INSERT INTO lead_magnet_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
 
-  await db`
+  await step(db, "create lead_form_questions", () => db`
     CREATE TABLE IF NOT EXISTS lead_form_questions (
       id         SERIAL PRIMARY KEY,
       label      TEXT NOT NULL,
@@ -170,9 +181,9 @@ async function ensureSchemaUncached(): Promise<void> {
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
-  `;
+  `);
 
-  await db`
+  await step(db, "create leads", () => db`
     CREATE TABLE IF NOT EXISTS leads (
       id         SERIAL PRIMARY KEY,
       email      TEXT NOT NULL,
@@ -181,8 +192,8 @@ async function ensureSchemaUncached(): Promise<void> {
       answers    JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
-  `;
-  await db`CREATE INDEX IF NOT EXISTS leads_created_at_idx ON leads (created_at DESC)`;
+  `);
+  await step(db, "create leads_created_at_idx", () => db`CREATE INDEX IF NOT EXISTS leads_created_at_idx ON leads (created_at DESC)`);
 }
 
 export function ensureSchema(): Promise<void> {
@@ -217,10 +228,15 @@ function toMagnetConfig(row: {
 export async function getMagnetConfig(): Promise<MagnetConfig> {
   if (isDemoMode()) return store().config;
   await ensureSchema();
-  const rows = await sql()`
-    SELECT enabled, title, description, resource_url, cover_image_url FROM lead_magnet_config WHERE id = 1
-  `;
-  return rows[0] ? toMagnetConfig(rows[0] as never) : DEFAULT_MAGNET;
+  try {
+    const rows = await sql()`
+      SELECT enabled, title, description, resource_url, cover_image_url FROM lead_magnet_config WHERE id = 1
+    `;
+    return rows[0] ? toMagnetConfig(rows[0] as never) : DEFAULT_MAGNET;
+  } catch (err) {
+    console.error("[db.ts getMagnetConfig SELECT failed]", JSON.stringify(err, Object.getOwnPropertyNames(err as object)));
+    throw err;
+  }
 }
 
 export async function updateMagnetConfig(input: Partial<MagnetConfig>): Promise<MagnetConfig> {
