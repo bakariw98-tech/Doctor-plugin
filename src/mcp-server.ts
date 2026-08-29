@@ -237,14 +237,20 @@ export function createMcpServer(): McpServer {
     {
       title: "Search Doctor Videos",
       description:
-        "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
-          "topic, or question. There are three modes, and the choice genuinely changes what comes " +
-          "back — if it isn't already obvious from how the person asked (e.g. 'find the video where " +
-          "he explains X' is clearly mode 'best'; 'what are his videos on X' is clearly 'explore'), " +
-          "ask them directly before calling this rather than guessing: 'What are you looking for? " +
-          "① The best video — the single video that most directly answers this. ② Explore — a " +
-          "handful of related videos to browse. ③ Everything — every video on the channel touching " +
-          "this topic.' Then call with the mode they picked. " +
+        "STOP — before calling this tool, decide whether the mode is already obvious from how the " +
+          "person phrased their request. It is obvious only for clearly single-video phrasing ('find " +
+          "the video where he explains X', 'what does he say about X') or clearly browse phrasing " +
+          "('what are his videos on X', 'show me everything he's got on X'). For anything else — " +
+          "including a bare topic/symptom with no phrasing cue either way, e.g. 'give me a video on " +
+          "cholesterol' — it is NOT obvious: do not silently default to 'best'. Instead, your entire " +
+          "reply must be just this question, and you must wait for their answer before calling this " +
+          "tool at all: 'What are you looking for? ① The best video — the single video that most " +
+          "directly answers this. ② Explore — a handful of related videos to browse. ③ Everything — " +
+          "every video on the channel touching this topic.' Only call this tool once they've " +
+          "answered, with the mode they picked. This applies to every search, not just the first one " +
+          "in a conversation. " +
+          "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
+          "topic, or question. " +
           "'best' (default) returns exactly one video — the single strongest match, rendered as one " +
           "large card. 'explore' returns a handful (up to 5) as a horizontal carousel. 'everything' " +
           "returns up to 20 as a scrollable grid. All three first check the actual spoken content of " +
@@ -276,7 +282,10 @@ export function createMcpServer(): McpServer {
           "yourself in your reply using what you read. In 'explore'/'everything' mode each thumbnail " +
           "does carry its title on the card (there are too many at once for your reply alone to " +
           "identify which is which) — you should still speak to what they collectively cover and " +
-          "which one you'd start with, not just hand back a grid. If a free-offer line appears at " +
+          "which one you'd start with, not just hand back a grid. 'explore' renders as a horizontally " +
+          "scrollable strip — mention in your reply that they can scroll/swipe through the rest " +
+          "(e.g. 'swipe through for a few more options'), since that isn't otherwise obvious from a " +
+          "static screenshot-like view. If a free-offer line appears at " +
           "the end of this tool's result text, follow up with it right after presenting the videos " +
           "(same reply or the very next one) — see that line for exact wording guidance; the " +
           "separate offer_lead_magnet tool still only gets called once they actually say yes.",
