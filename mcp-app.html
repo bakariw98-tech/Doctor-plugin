@@ -118,7 +118,18 @@
       .empty { font-size: 13px; color: var(--text); opacity: 0.6; }
 
       /* Lead-capture form (src/lead-form.ts), shown by offer_lead_magnet. */
-      .lead-form { max-width: 380px; }
+      .lead-form {
+        max-width: 380px; border-radius: 14px; overflow: hidden;
+        background: var(--btn-bg); box-shadow: var(--rest);
+      }
+      .lead-cover {
+        aspect-ratio: 16 / 7; display: flex; align-items: center; justify-content: center;
+      }
+      .lead-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .lead-cover-fallback {
+        background: linear-gradient(135deg, var(--ring), color-mix(in srgb, var(--ring) 55%, #7a2d0a));
+      }
+      .lead-body { padding: 16px; }
       .lead-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
       .lead-desc { font-size: 13px; opacity: 0.75; margin: 0 0 14px; line-height: 1.4; }
       .lead-fields { display: flex; flex-direction: column; gap: 10px; }

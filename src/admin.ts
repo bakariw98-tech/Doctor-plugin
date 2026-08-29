@@ -234,6 +234,7 @@ async function dashboardPage(): Promise<AdminResponse> {
             <label><span>Title</span><input type="text" name="title" value="${escapeHtml(config.title)}" required /></label>
             <label><span>Description</span><input type="text" name="description" value="${escapeHtml(config.description)}" required /></label>
             <label><span>Resource URL</span><input type="url" name="resourceUrl" value="${escapeHtml(config.resourceUrl)}" required /></label>
+            <label><span>Cover image URL (optional)</span><input type="url" name="coverImageUrl" value="${escapeHtml(config.coverImageUrl ?? "")}" placeholder="Leave blank for a plain gradient cover" /></label>
             <button type="submit">Save</button>
           </form>
         </div>
@@ -306,6 +307,7 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
       title: req.body.title ?? "",
       description: req.body.description ?? "",
       resourceUrl: req.body.resourceUrl ?? "",
+      coverImageUrl: req.body.coverImageUrl?.trim() || null,
     });
     return redirect("/admin");
   }
