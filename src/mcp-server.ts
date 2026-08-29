@@ -237,18 +237,18 @@ export function createMcpServer(): McpServer {
     {
       title: "Search Doctor Videos",
       description:
-        "STOP — before calling this tool, decide whether the mode is already obvious from how the " +
-          "person phrased their request. It is obvious only for clearly single-video phrasing ('find " +
-          "the video where he explains X', 'what does he say about X') or clearly browse phrasing " +
-          "('what are his videos on X', 'show me everything he's got on X'). For anything else — " +
-          "including a bare topic/symptom with no phrasing cue either way, e.g. 'give me a video on " +
-          "cholesterol' — it is NOT obvious: do not silently default to 'best'. Instead, your entire " +
-          "reply must be just this question, and you must wait for their answer before calling this " +
-          "tool at all: 'What are you looking for? ① The best video — the single video that most " +
-          "directly answers this. ② Explore — a handful of related videos to browse. ③ Everything — " +
-          "every video on the channel touching this topic.' Only call this tool once they've " +
-          "answered, with the mode they picked. This applies to every search, not just the first one " +
-          "in a conversation. " +
+        "STOP — before calling this tool, you must always ask which mode they want, every single " +
+          "time, with NO exceptions for how the request happens to be phrased. This applies even " +
+          "when the phrasing seems to hint at one mode or another (e.g. 'what are his videos on X', " +
+          "'find the video where he explains X') — phrasing is not a reliable enough signal, so do " +
+          "not treat any wording as 'obviously' implying a mode. Do not silently default to 'best'. " +
+          "Your entire reply must be just this question, and you must wait for their answer before " +
+          "calling this tool at all: 'What are you looking for? ① The best video — the single video " +
+          "that most directly answers this. ② Explore — a handful of related videos to browse. " +
+          "③ Everything — every video on the channel touching this topic.' Only call this tool once " +
+          "they've answered, with the mode they picked. This applies to every search in the " +
+          "conversation, not just the first one — ask again each time, even if they already answered " +
+          "this question earlier for a different topic. " +
           "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
           "topic, or question. " +
           "'best' (default) returns exactly one video — the single strongest match, rendered as one " +
