@@ -5,25 +5,73 @@
 // for the actual logic and why it has its own security headers separate
 // from the widget's ui:// CSP.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import Busboy from "busboy";
 import { handleAdminRequest, type AdminRequest } from "../src/admin.js";
 
-// Vercel's Node runtime auto-parses the body based on Content-Type
-// (including application/x-www-form-urlencoded, same mechanism api/mcp.ts
-// already relies on for its JSON bodies) into req.body as an object — but
-// fall back to parsing it ourselves if it ever arrives as a raw string,
-// rather than assuming that always holds.
-function parseFormBody(body: unknown): Record<string, string> {
-  if (body && typeof body === "object") {
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
-      if (typeof value === "string") out[key] = value;
-    }
-    return out;
+// The save-config form uploads a file (multipart/form-data), which
+// Vercel's automatic body parser doesn't handle — bodyParser is turned
+// off entirely here so both multipart and the plain
+// application/x-www-form-urlencoded forms (login, add-question, ...) are
+// parsed the same way below, from the raw request stream.
+export const config = { api: { bodyParser: false } };
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // stay under Vercel's request body cap
+
+interface ParsedBody {
+  fields: Record<string, string>;
+  file?: { filename: string; mimetype: string; data: Buffer };
+}
+
+async function readRawBody(req: VercelRequest): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
+function parseMultipart(req: VercelRequest): Promise<ParsedBody> {
+  return new Promise((resolve, reject) => {
+    const busboy = Busboy({ headers: req.headers as Record<string, string>, limits: { fileSize: MAX_UPLOAD_BYTES } });
+    const fields: Record<string, string> = {};
+    let file: ParsedBody["file"];
+    let tooLarge = false;
+
+    busboy.on("field", (name, value) => {
+      fields[name] = value;
+    });
+    busboy.on("file", (_name, stream, info) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("limit", () => {
+        tooLarge = true;
+      });
+      stream.on("end", () => {
+        if (!tooLarge && chunks.length) {
+          file = { filename: info.filename, mimetype: info.mimeType, data: Buffer.concat(chunks) };
+        }
+      });
+    });
+    busboy.on("error", reject);
+    busboy.on("close", () => {
+      if (tooLarge) {
+        reject(new Error(`File too large — max ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB. Host it elsewhere and paste a direct link instead.`));
+        return;
+      }
+      resolve({ fields, file });
+    });
+    req.pipe(busboy);
+  });
+}
+
+async function parseRequest(req: VercelRequest): Promise<ParsedBody> {
+  const contentType = req.headers["content-type"] ?? "";
+  if (contentType.startsWith("multipart/form-data")) {
+    return parseMultipart(req);
   }
-  if (typeof body === "string") {
-    return Object.fromEntries(new URLSearchParams(body));
-  }
-  return {};
+  // application/x-www-form-urlencoded (the login/add-question/etc. forms)
+  const raw = (await readRawBody(req)).toString("utf8");
+  const fields: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(raw)) fields[key] = value;
+  return { fields };
 }
 
 function parseCookie(header: string | undefined, name: string): string | undefined {
@@ -38,14 +86,16 @@ function parseCookie(header: string | undefined, name: string): string | undefin
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = typeof req.query.action === "string" ? req.query.action : undefined;
 
-  const adminReq: AdminRequest = {
-    method: req.method ?? "GET",
-    action,
-    body: req.method === "POST" ? parseFormBody(req.body) : {},
-    cookie: parseCookie(req.headers.cookie, "admin_session"),
-  };
-
   try {
+    const { fields, file } = req.method === "POST" ? await parseRequest(req) : { fields: {}, file: undefined };
+    const adminReq: AdminRequest = {
+      method: req.method ?? "GET",
+      action,
+      body: fields,
+      cookie: parseCookie(req.headers.cookie, "admin_session"),
+      file,
+    };
+
     const result = await handleAdminRequest(adminReq);
     for (const [key, value] of Object.entries(result.headers)) {
       res.setHeader(key, value);

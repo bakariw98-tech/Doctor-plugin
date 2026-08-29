@@ -25,12 +25,19 @@ import {
   listLeads,
   type Lead,
 } from "./db.js";
+import { uploadResourceFile } from "./storage.js";
 
 export interface AdminRequest {
   method: string;
   action: string | undefined; // ?action=... query param
-  body: Record<string, string>; // parsed application/x-www-form-urlencoded body (POST only)
+  body: Record<string, string>; // parsed form fields (POST only) — from either body encoding
   cookie: string | undefined; // the raw admin_session cookie value, if present
+  // Present only on a multipart save-config submission that included a
+  // file in the "resourceFile" field. The api/admin.ts (Vercel) and
+  // server.ts (local dev) adapters parse multipart bodies themselves and
+  // hand the raw bytes through here — this module never touches HTTP
+  // parsing directly.
+  file?: { filename: string; mimetype: string; data: Buffer };
 }
 
 export interface AdminResponse {
@@ -234,14 +241,26 @@ async function dashboardPage(): Promise<AdminResponse> {
 
         <h2>Free resource offer</h2>
         <div class="card">
-          <form method="post" action="/admin?action=save-config">
+          <form method="post" action="/admin?action=save-config" enctype="multipart/form-data">
             <div class="checkbox-row">
               <input type="checkbox" id="enabled" name="enabled" ${config.enabled ? "checked" : ""} />
               <label for="enabled" style="margin:0;"><span style="margin:0;">Offer enabled</span></label>
             </div>
             <label><span>Title</span><input type="text" name="title" value="${escapeHtml(config.title)}" required /></label>
             <label><span>Description</span><input type="text" name="description" value="${escapeHtml(config.description)}" required /></label>
-            <label><span>Resource URL</span><input type="url" name="resourceUrl" value="${escapeHtml(config.resourceUrl)}" required /></label>
+            <label>
+              <span>Lead magnet file</span>
+              <input type="file" name="resourceFile" accept=".pdf,.zip,.doc,.docx,.png,.jpg,.jpeg,.mp4,.mp3,.csv" />
+            </label>
+            <p class="sub" style="margin:-6px 0 12px;">
+              ${
+                config.resourceUrl && config.resourceUrl !== "https://example.com/placeholder.pdf"
+                  ? `Current file: <a href="${escapeHtml(config.resourceUrl)}" target="_blank" rel="noopener">${escapeHtml(config.resourceUrl.split("/").pop() || config.resourceUrl)}</a>. Upload a new one to replace it, or leave this blank to keep it.`
+                  : "No file uploaded yet — still the placeholder."
+              }
+              Max 4&nbsp;MB. For a bigger file, host it elsewhere and paste the direct link below instead.
+            </p>
+            <label><span>Or paste a direct URL instead of uploading</span><input type="url" name="resourceUrl" placeholder="Leave blank to use the uploaded file above" /></label>
             <label><span>Cover image URL (optional)</span><input type="url" name="coverImageUrl" value="${escapeHtml(config.coverImageUrl ?? "")}" placeholder="Leave blank for a plain gradient cover" /></label>
             <button type="submit">Save</button>
           </form>
@@ -310,11 +329,24 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
   }
 
   if (req.action === "save-config" && req.method === "POST") {
+    // Precedence: an uploaded file wins; otherwise a typed URL; otherwise
+    // keep whatever's already stored — an empty submit (neither field
+    // touched) must not blank out a working link.
+    const current = await getMagnetConfig();
+    let resourceUrl = req.body.resourceUrl?.trim() || current.resourceUrl;
+    if (req.file && req.file.data.length > 0) {
+      try {
+        resourceUrl = await uploadResourceFile(req.file.data, req.file.filename, req.file.mimetype);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return html(500, page("Leads dashboard", `<p class="error">Could not upload the file: ${escapeHtml(message)}</p><p><a href="/admin">Back</a> — your other changes were not saved; re-submit the form.</p>`));
+      }
+    }
     await updateMagnetConfig({
       enabled: req.body.enabled === "on",
       title: req.body.title ?? "",
       description: req.body.description ?? "",
-      resourceUrl: req.body.resourceUrl ?? "",
+      resourceUrl,
       coverImageUrl: req.body.coverImageUrl?.trim() || null,
     });
     return redirect("/admin");
