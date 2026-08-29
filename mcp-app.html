@@ -117,6 +117,32 @@
 
       .empty { font-size: 13px; color: var(--text); opacity: 0.6; }
 
+      /* Lead-capture form (src/lead-form.ts), shown by offer_lead_magnet. */
+      .lead-form { max-width: 380px; }
+      .lead-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+      .lead-desc { font-size: 13px; opacity: 0.75; margin: 0 0 14px; line-height: 1.4; }
+      .lead-fields { display: flex; flex-direction: column; gap: 10px; }
+      .lead-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+      .lead-field span { font-weight: 600; opacity: 0.85; }
+      .lead-field input {
+        font: inherit; font-size: 14px; color: var(--text);
+        background: var(--btn-bg); border: 1px solid var(--btn-border);
+        border-radius: 8px; padding: 8px 10px;
+      }
+      .lead-field input:focus-visible {
+        outline: none; border-color: var(--ring);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 30%, transparent);
+      }
+      .lead-submit {
+        font: inherit; font-size: 14px; font-weight: 600; color: #fff;
+        background: var(--ring); border: 0; border-radius: 8px;
+        padding: 10px 14px; cursor: pointer; margin-top: 4px;
+      }
+      .lead-submit:disabled { opacity: 0.6; cursor: default; }
+      .lead-error { font-size: 12.5px; color: #c0392b; margin: 0; }
+      .lead-error[hidden] { display: none; }
+      .lead-success { font-size: 14px; font-weight: 600; padding: 10px 0; }
+
       /* Screen-reader-only summary — there's no visible status line (the
          agent's own message covers that), but the count should still be
          announced when results load. */

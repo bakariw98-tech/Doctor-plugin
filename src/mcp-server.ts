@@ -13,6 +13,7 @@ import { searchChannelVideos, getVideosByIds, type VideoResult } from "./youtube
 import { findTranscriptMatches, scoreTranscript } from "./transcript-search.js";
 import { WIDGET_HTML } from "./generated/widget-html.js";
 import { TRANSCRIPTS } from "./generated/transcripts.js";
+import { getMagnetConfig, listQuestions, insertLead } from "./db.js";
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
@@ -289,7 +290,7 @@ export function createMcpServer(): McpServer {
 
         return {
           content: [{ type: "text", text: buildResultText(query, combined) }],
-          structuredContent: { query, view: config.view, videos: combined },
+          structuredContent: { kind: "videos" as const, query, view: config.view, videos: combined },
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -297,6 +298,109 @@ export function createMcpServer(): McpServer {
           content: [{ type: "text", text: `Search failed: ${message}` }],
           isError: true,
         };
+      }
+    },
+  );
+
+  registerAppTool(
+    server,
+    "offer_lead_magnet",
+    {
+      title: "Offer Free Resource",
+      description:
+        "Shows a lead-capture form offering the person a free downloadable resource (a guide/PDF — " +
+          "content configured by the channel owner, may be a placeholder for now) related to what " +
+          "they've been asking about. IMPORTANT: only call this after you've explicitly asked the " +
+          "person, in your own reply, whether they'd like it, and they've clearly said yes — never " +
+          "call this proactively or silently after a search. Ask naturally, e.g. 'There's also a " +
+          "free related guide — want it sent to you?', and only proceed on an actual yes ('yes', " +
+          "'sure', 'sounds good'). If they decline or don't respond to that question, do not call " +
+          "this. It renders a small form (email, name, plus whatever extra questions the channel " +
+          "owner has configured) directly in the widget; the person fills it out and submits it " +
+          "themselves from there — you are never given their answers, so don't ask for the same " +
+          "information again in chat or claim to have sent anything yourself. After calling this, a " +
+          "brief 'Here's the form!' is enough — let the widget carry the rest.",
+      inputSchema: {
+        topic: z
+          .string()
+          .describe(
+            "The topic or search query this offer relates to (e.g. the most recent " +
+              "search_doctor_videos query) — stored with the lead if they submit, so the channel " +
+              "owner can see what prompted interest.",
+          ),
+      },
+      _meta: {
+        ui: { resourceUri: RESOURCE_URI },
+        "openai/outputTemplate": RESOURCE_URI,
+        "openai/toolInvocation/invoking": "Loading the free resource…",
+        "openai/toolInvocation/invoked": "Here's the form.",
+      },
+    },
+    async ({ topic }) => {
+      try {
+        const config = await getMagnetConfig();
+        if (!config.enabled) {
+          return {
+            content: [{ type: "text", text: "The free resource offer is currently turned off." }],
+            isError: true,
+          };
+        }
+        const questions = await listQuestions();
+        return {
+          content: [{ type: "text", text: `Offering "${config.title}" related to "${topic}".` }],
+          structuredContent: {
+            kind: "lead_form" as const,
+            topic,
+            magnet: { title: config.title, description: config.description },
+            questions: questions.map((q) => ({ fieldKey: q.fieldKey, label: q.label, required: q.required })),
+          },
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Could not load the offer: ${message}` }], isError: true };
+      }
+    },
+  );
+
+  // App-only (visibility: ["app"]) — the model never calls this directly.
+  // The widget calls it via app.callServerTool once the person submits the
+  // form rendered by offer_lead_magnet above.
+  registerAppTool(
+    server,
+    "submit_lead",
+    {
+      title: "Submit Lead",
+      description:
+        "Internal — called by the widget when someone submits the lead-capture form shown by " +
+          "offer_lead_magnet. Not for the model to call.",
+      inputSchema: {
+        email: z.string().email(),
+        name: z.string().optional(),
+        topic: z.string().optional(),
+        answers: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Answers to the channel owner's extra configured questions, keyed by fieldKey."),
+      },
+      _meta: {
+        ui: { resourceUri: RESOURCE_URI, visibility: ["app"] },
+      },
+    },
+    async ({ email, name, topic, answers }) => {
+      try {
+        const lead = await insertLead({
+          email,
+          name: name ?? null,
+          topic: topic ?? null,
+          answers: answers ?? {},
+        });
+        return {
+          content: [{ type: "text", text: "Lead recorded." }],
+          structuredContent: { kind: "lead_submitted" as const, leadId: lead.id },
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Could not save: ${message}` }], isError: true };
       }
     },
   );
