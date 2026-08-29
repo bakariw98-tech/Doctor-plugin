@@ -157,8 +157,8 @@ async function freeOfferHint(resultCount: number): Promise<string> {
     // and a trailing hint after a big transcript blob can get cut off
     // silently before the model ever sees it).
     return (
-      `FREE OFFER AVAILABLE — mention this in your reply, right after you present the video(s) ` +
-      `below: there's a free resource, "${magnet.title}" — ${magnet.description} ` +
+      `Note: there's also a free resource related to this topic, "${magnet.title}" — ${magnet.description} ` +
+      `Worth mentioning in your reply, right after you present the video(s) below. ` +
       `Ask in your own words whether they'd like it (naming what it actually covers, not a generic ` +
       `"want a free guide?"), e.g. "There's also a free guide, '${magnet.title}', that covers ` +
       `${magnet.description.replace(/\.$/, "")} — want it?" Only call offer_lead_magnet if they clearly ` +
@@ -241,20 +241,15 @@ export function createMcpServer(): McpServer {
     {
       title: "Search Doctor Videos",
       description:
-        "STOP — before calling this tool, you must always ask which mode they want, every single " +
-          "time, with NO exceptions for how the request happens to be phrased. This applies even " +
-          "when the phrasing seems to hint at one mode or another (e.g. 'what are his videos on X', " +
-          "'find the video where he explains X') — phrasing is not a reliable enough signal, so do " +
-          "not treat any wording as 'obviously' implying a mode. Do not silently default to 'best'. " +
-          "Your entire reply must be just this question, and you must wait for their answer before " +
-          "calling this tool at all: 'What are you looking for? ① The best video — the single video " +
-          "that most directly answers this. ② Explore — a handful of related videos to browse. " +
-          "③ Everything — every video on the channel touching this topic.' Only call this tool once " +
-          "they've answered, with the mode they picked. This applies to every search in the " +
-          "conversation, not just the first one — ask again each time, even if they already answered " +
-          "this question earlier for a different topic. " +
-          "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
-          "topic, or question. " +
+        "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
+          "topic, or question. This tool has three result modes — 'best', 'explore', 'everything' " +
+          "— and works best when the person has chosen one first, rather than the mode being guessed " +
+          "from how they phrased their request (wording alone isn't a reliable signal for which one " +
+          "they'd actually want, even when it seems to hint at one). The suggested flow: ask them " +
+          "'What are you looking for? ① The best video — the single video that most directly answers " +
+          "this. ② Explore — a handful of related videos to browse. ③ Everything — every video on the " +
+          "channel touching this topic,' then call this tool with the mode they pick. Apply this each " +
+          "time someone asks about a new topic in the conversation, not just the first search. " +
           "'best' (default) returns exactly one video — the single strongest match, rendered as one " +
           "large card. 'explore' returns a handful (up to 5) as a horizontal carousel. 'everything' " +
           "returns up to 20 as a scrollable grid. All three first check the actual spoken content of " +
@@ -289,10 +284,10 @@ export function createMcpServer(): McpServer {
           "which one you'd start with, not just hand back a grid. 'explore' renders as a horizontally " +
           "scrollable strip — mention in your reply that they can scroll/swipe through the rest " +
           "(e.g. 'swipe through for a few more options'), since that isn't otherwise obvious from a " +
-          "static screenshot-like view. If a free-offer line appears at " +
-          "the end of this tool's result text, follow up with it right after presenting the videos " +
-          "(same reply or the very next one) — see that line for exact wording guidance; the " +
-          "separate offer_lead_magnet tool still only gets called once they actually say yes.",
+          "static screenshot-like view. If a free-offer line appears at the start of this tool's " +
+          "result text, follow up with it right after presenting the videos (same reply or the very " +
+          "next one) — see that line for wording guidance; the separate offer_lead_magnet tool still " +
+          "only gets called once they actually say yes.",
       inputSchema: {
         query: z
           .string()
@@ -358,11 +353,10 @@ export function createMcpServer(): McpServer {
       description:
         "Shows a lead-capture form offering the person a free downloadable resource (a guide/PDF — " +
           "content configured by the channel owner, may be a placeholder for now) related to what " +
-          "they've been asking about. IMPORTANT: only call this after you've explicitly asked the " +
-          "person, in your own reply, whether they'd like it, and they've clearly said yes — never " +
-          "call this proactively or silently after a search. Ask naturally, e.g. 'There's also a " +
-          "free related guide — want it?', and only proceed on an actual yes ('yes', 'sure', " +
-          "'sounds good'). If they decline or don't respond to that question, do not call this. It " +
+          "they've been asking about. This should only be called after the person has been asked, " +
+          "in a normal reply, whether they'd like it, and has clearly said yes — not proactively or " +
+          "silently right after a search, and not on anything short of an actual yes ('yes', 'sure', " +
+          "'sounds good'). If they decline or don't respond to that question, don't call this. It " +
           "renders a small form (email, name, plus whatever extra questions the channel owner has " +
           "configured) directly in the widget; the person fills it out and submits it themselves " +
           "from there — you are never given their answers, so don't ask for the same information " +
