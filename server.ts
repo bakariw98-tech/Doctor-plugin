@@ -5,6 +5,7 @@
 console.log("Starting Doctor YouTube MCP App server...");
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import Busboy from "busboy";
 import cors from "cors";
 import express from "express";
 import path from "node:path";
@@ -12,6 +13,46 @@ import { createMcpServer } from "./src/mcp-server.js";
 import { searchChannelVideos } from "./src/youtube.js";
 import { resolveView, type ViewOption } from "./src/view.js";
 import { handleAdminRequest, type AdminRequest } from "./src/admin.js";
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // matches api/admin.ts — Vercel's request body cap
+
+// express.urlencoded()/json() below only consume bodies whose Content-Type
+// they match, so a multipart save-config submission reaches this handler
+// with its raw stream untouched — parse it the same way api/admin.ts does
+// on Vercel, so local dev (npm run serve) behaves identically.
+function parseMultipart(req: express.Request): Promise<{ fields: Record<string, string>; file?: { filename: string; mimetype: string; data: Buffer } }> {
+  return new Promise((resolve, reject) => {
+    const busboy = Busboy({ headers: req.headers as Record<string, string>, limits: { fileSize: MAX_UPLOAD_BYTES } });
+    const fields: Record<string, string> = {};
+    let file: { filename: string; mimetype: string; data: Buffer } | undefined;
+    let tooLarge = false;
+
+    busboy.on("field", (name, value) => {
+      fields[name] = value;
+    });
+    busboy.on("file", (_name, stream, info) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("limit", () => {
+        tooLarge = true;
+      });
+      stream.on("end", () => {
+        if (!tooLarge && chunks.length) {
+          file = { filename: info.filename, mimetype: info.mimeType, data: Buffer.concat(chunks) };
+        }
+      });
+    });
+    busboy.on("error", reject);
+    busboy.on("close", () => {
+      if (tooLarge) {
+        reject(new Error(`File too large — max ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB. Host it elsewhere and paste a direct link instead.`));
+        return;
+      }
+      resolve({ fields, file });
+    });
+    req.pipe(busboy);
+  });
+}
 
 const app = express();
 app.use(cors());
@@ -55,13 +96,24 @@ app.get("/api/search", async (req, res) => {
 
 async function adminHandler(req: express.Request, res: express.Response) {
   const action = typeof req.query.action === "string" ? req.query.action : undefined;
-  const adminReq: AdminRequest = {
-    method: req.method,
-    action,
-    body: req.method === "POST" ? (req.body as Record<string, string>) : {},
-    cookie: parseCookie(req.headers.cookie, "admin_session"),
-  };
   try {
+    let body: Record<string, string> = {};
+    let file: AdminRequest["file"];
+    if (req.method === "POST") {
+      const contentType = req.headers["content-type"] ?? "";
+      if (contentType.startsWith("multipart/form-data")) {
+        ({ fields: body, file } = await parseMultipart(req));
+      } else {
+        body = req.body as Record<string, string>; // parsed by express.urlencoded() above
+      }
+    }
+    const adminReq: AdminRequest = {
+      method: req.method,
+      action,
+      body,
+      cookie: parseCookie(req.headers.cookie, "admin_session"),
+      file,
+    };
     const result = await handleAdminRequest(adminReq);
     for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
     res.status(result.status).send(result.body);

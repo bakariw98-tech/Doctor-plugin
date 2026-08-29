@@ -188,11 +188,23 @@ leads. Unset it once `DATABASE_URL` is configured for real.
 5. Optionally run `npm run migrate` once to confirm the connection works
    (creates the tables if they don't exist yet — though this also happens
    automatically the first time any of this is actually used).
-6. Visit `/admin` (locally: `http://localhost:3001/admin`; deployed:
+6. **Optional — let `/admin` upload the file directly**, instead of
+   pasting a URL to a file hosted elsewhere: on the same Supabase
+   **Project Settings → API** page, copy the **Project URL** as
+   `SUPABASE_URL` and the **service_role** secret key as
+   `SUPABASE_SERVICE_ROLE_KEY` — both in `.env` and Vercel's env vars.
+   The service_role key bypasses every access rule in the database, so
+   treat it like a real credential and never expose it to a browser. A
+   one-time SQL migration creates a public `lead-magnets` storage bucket
+   for this (see `src/storage.ts`) — already applied if you're working
+   from this repo's history; otherwise see that file's comments for the
+   SQL. Without this, the upload field in `/admin` just won't do anything
+   — paste a direct URL in the field below it instead.
+7. Visit `/admin` (locally: `http://localhost:3001/admin`; deployed:
    `https://<your-deployment>.vercel.app/admin`), log in with the token,
-   and fill in the real lead magnet (title, description, a real resource
-   URL — it starts as an obvious placeholder) plus any extra questions you
-   want the form to ask beyond email + name.
+   and fill in the real lead magnet (title, description, upload the file
+   or paste a URL — it starts as an obvious placeholder) plus any extra
+   questions you want the form to ask beyond email + name.
 
 **Local dev and Vercel preview deployments hit the same Supabase project by
 default** unless you create a separate one — decide whether that's fine for
