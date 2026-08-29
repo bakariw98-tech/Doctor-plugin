@@ -140,6 +140,65 @@ function buildResultText(query: string, videos: VideoResult[]): string {
   );
 }
 
+// Explicit, asked-for modes rather than trying to infer "does this person
+// want one video or several" from the query text — see the tool
+// description, which tells the calling model to ask the person directly
+// (① best / ② explore / ③ everything) when it isn't already obvious.
+type Mode = "best" | "explore" | "everything";
+
+const MODE_CONFIG: Record<Mode, { maxResults: number; view: "card" | "carousel" | "grid" }> = {
+  best: { maxResults: 1, view: "card" },
+  explore: { maxResults: 5, view: "carousel" },
+  everything: { maxResults: 20, view: "grid" },
+};
+
+// How many locally-matched (by transcript content) videos can be boosted
+// into a response ahead of YouTube's own keyword-ranked results, on top
+// of whatever the mode's maxResults already allows for.
+const MAX_TRANSCRIPT_BOOSTED = 5;
+
+/**
+ * Gathers up to `maxResults` videos for a query: the best local
+ * transcript-content matches first (real evidence YouTube's own search
+ * can't see at all), then YouTube's own keyword-ranked results filling
+ * any remaining slots, deduplicated. For maxResults === 1 this
+ * effectively becomes "pick the single best match" — a local transcript
+ * match if one exists, otherwise YouTube's own top keyword result.
+ */
+async function gatherVideos(query: string, maxResults: number): Promise<VideoResult[]> {
+  const localMatches = findTranscriptMatches(query, TRANSCRIPTS, Math.max(maxResults, MAX_TRANSCRIPT_BOOSTED));
+
+  if (maxResults === 1) {
+    if (localMatches[0]) {
+      try {
+        const [video] = await getVideosByIds([localMatches[0].videoId]);
+        if (video) return [video];
+      } catch {
+        // Fall through to keyword search below if the direct lookup
+        // fails for some reason.
+      }
+    }
+    const [video] = await searchChannelVideos(query, 1);
+    return video ? [video] : [];
+  }
+
+  const videos = await searchChannelVideos(query, maxResults);
+  const existingIds = new Set(videos.map((v) => v.videoId));
+  const boostIds = localMatches.filter((m) => !existingIds.has(m.videoId)).map((m) => m.videoId);
+
+  let boosted: VideoResult[] = [];
+  if (boostIds.length > 0) {
+    try {
+      boosted = await getVideosByIds(boostIds);
+    } catch {
+      // Best-effort — the keyword-search results alone are still a fine
+      // response if this fails.
+    }
+  }
+
+  return [...boosted, ...videos].slice(0, maxResults);
+}
+
 export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "Doctor YouTube Search",
@@ -152,42 +211,58 @@ export function createMcpServer(): McpServer {
     {
       title: "Search Doctor Videos",
       description:
-        "Searches the configured doctor's YouTube channel for the ONE video that best matches a " +
-          "symptom, topic, or question, and returns exactly that one video — no options, no list to " +
-          "sort through. First it checks the actual spoken content of every locally-transcribed " +
-          "video (YouTube's own search never does this — it only indexes title/description/tags), " +
-          "and picks whichever video has the strongest real evidence for the question; only when no " +
-          "video's transcript has a meaningful match does it fall back to YouTube's own keyword " +
-          "search. The result comes back with its full, untruncated video description (not the " +
-          "~130-character snippet YouTube's search API normally returns) and its tags, on top of " +
+        "Searches the configured doctor's YouTube channel and returns video(s) matching a symptom, " +
+          "topic, or question. There are three modes, and the choice genuinely changes what comes " +
+          "back — if it isn't already obvious from how the person asked (e.g. 'find the video where " +
+          "he explains X' is clearly mode 'best'; 'what are his videos on X' is clearly 'explore'), " +
+          "ask them directly before calling this rather than guessing: 'What are you looking for? " +
+          "① The best video — the single video that most directly answers this. ② Explore — a " +
+          "handful of related videos to browse. ③ Everything — every video on the channel touching " +
+          "this topic.' Then call with the mode they picked. " +
+          "'best' (default) returns exactly one video — the single strongest match, rendered as one " +
+          "large card. 'explore' returns a handful (up to 5) as a horizontal carousel. 'everything' " +
+          "returns up to 20 as a scrollable grid. All three first check the actual spoken content of " +
+          "every locally-transcribed video (YouTube's own search never does this — it only indexes " +
+          "title/description/tags) so a video can surface even when its title shares no words with " +
+          "the question, then fill any remaining slots from YouTube's own keyword search. Each " +
+          "result comes back with its full, untruncated video description (not the ~130-character " +
+          "snippet YouTube's search API normally returns) and its tags, on top of " +
           "title/duration/publishedAt — read that full description and tags yourself rather than " +
-          "trusting the title alone, since a video can be exactly right without sharing any of the " +
-          "question's words. When a transcript is present (from a pre-built local dataset covering " +
-          "the channel's recent uploads — not every video has one, and very new videos may not be " +
-          "in it yet), it's the actual spoken content and is far more reliable for judging fit than " +
-          "the description or title. It also comes with an explicit 'Transcript match: score N — " +
-          "most relevant moment at [MM:SS]: quote' line — that's a concrete, computed signal, not " +
+          "trusting the title alone. When a transcript is present (from a pre-built local dataset " +
+          "covering the channel's recent uploads — not every video has one, and very new videos may " +
+          "not be in it yet), it's the actual spoken content and is far more reliable for judging " +
+          "fit than the description or title. It also comes with an explicit 'Transcript match: " +
+          "score N — most relevant moment at [MM:SS]: quote' line — a concrete, computed signal, not " +
           "something to double-guess by skimming the transcript yourself. If that evidence doesn't " +
           "actually answer the question (a weak or coincidental match), say so plainly rather than " +
           "presenting it as if it does. Never state or imply specific content, terminology, or a " +
           "named mechanism/study/number that you didn't actually read in this response — if the " +
           "stored transcript doesn't reach the part of the video that would answer the question " +
           "(flagged explicitly as a 'COVERAGE GAP' when it applies), say plainly that you can't see " +
-          "that part yet rather than guessing at what's probably said there. The transcript has inline '[MM:SS]' markers dropped in " +
-          "roughly every 20 seconds of the video — when a question is specific enough that one " +
-          "moment answers it (e.g. 'how much protein does he say to eat a day'), quote or summarize " +
-          "that exact moment and tell the person the approximate timestamp where it's said ('around " +
-          "4:20 he says...'), not just that the video covers the topic. There's no timestamped link " +
-          "to give them — say the time in words so they can skip to it themselves. The rendered " +
-          "widget shows a single thumbnail only — no title, date, or description drawn on screen. " +
-          "So after calling this, speak the result yourself in your reply using what you read: say " +
-          "what it covers and why it fits, quoting the transcript evidence when it's specific enough " +
-          "to. Don't just confirm a video was found — the thumbnail carries no information on its " +
-          "own without your reply.",
+          "that part yet rather than guessing at what's probably said there. The transcript has " +
+          "inline '[MM:SS]' markers dropped in roughly every 20 seconds of the video — when a " +
+          "question is specific enough that one moment answers it (e.g. 'how much protein does he " +
+          "say to eat a day'), quote or summarize that exact moment and tell the person the " +
+          "approximate timestamp where it's said ('around 4:20 he says...'), not just that the video " +
+          "covers the topic. There's no timestamped link to give them — say the time in words so " +
+          "they can skip to it themselves. In 'best' mode the rendered widget shows a single " +
+          "thumbnail only — no title, date, or description drawn on screen, so speak the result " +
+          "yourself in your reply using what you read. In 'explore'/'everything' mode each thumbnail " +
+          "does carry its title on the card (there are too many at once for your reply alone to " +
+          "identify which is which) — you should still speak to what they collectively cover and " +
+          "which one you'd start with, not just hand back a grid.",
       inputSchema: {
         query: z
           .string()
           .describe("Symptom, topic, or question to search the channel for, e.g. 'lower back pain'."),
+        mode: z
+          .enum(["best", "explore", "everything"])
+          .optional()
+          .describe(
+            "'best' (default): the single strongest-matching video, one card. 'explore': up to 5 " +
+              "related videos, a carousel. 'everything': up to 20, a scrollable grid. Ask the person " +
+              "which they want when it isn't obvious from their phrasing — see the main description.",
+          ),
       },
       _meta: {
         ui: { resourceUri: RESOURCE_URI },
@@ -197,30 +272,10 @@ export function createMcpServer(): McpServer {
         "openai/toolInvocation/invoked": "Here's what I found.",
       },
     },
-    async ({ query }) => {
+    async ({ query, mode }) => {
       try {
-        // Always exactly one video, always a single card — no carousel,
-        // spotlight, or grid for now (see git history for that logic if
-        // it needs to come back). Prefer the best local transcript match
-        // (real content evidence, not just title/tag keyword overlap);
-        // fall back to YouTube's own keyword search only when no video's
-        // transcript has any match at all.
-        const [topMatch] = findTranscriptMatches(query, TRANSCRIPTS, 1);
-
-        let video: VideoResult | undefined;
-        if (topMatch) {
-          try {
-            [video] = await getVideosByIds([topMatch.videoId]);
-          } catch {
-            // Fall through to keyword search below if the direct lookup
-            // fails for some reason.
-          }
-        }
-        if (!video) {
-          [video] = await searchChannelVideos(query, 1);
-        }
-
-        const combined = video ? [video] : [];
+        const config = MODE_CONFIG[mode ?? "best"];
+        const combined = await gatherVideos(query, config.maxResults);
 
         // Local lookup only — no network call, no Supadata dependency at
         // request time. TRANSCRIPTS is a pre-built dataset embedded at
@@ -234,7 +289,7 @@ export function createMcpServer(): McpServer {
 
         return {
           content: [{ type: "text", text: buildResultText(query, combined) }],
-          structuredContent: { query, view: "card" as const, videos: combined },
+          structuredContent: { query, view: config.view, videos: combined },
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
