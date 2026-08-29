@@ -37,6 +37,47 @@ const TOTAL_TRANSCRIPT_BUDGET = 24000;
 // screen but have no idea what's actually in them. Confirmed live against
 // Claude's web connector, which never saw a transcript that was only in
 // structuredContent.
+function parseTimeToSeconds(time: string): number | null {
+  const parts = time.split(":").map(Number);
+  if (parts.some((n) => Number.isNaN(n))) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+// If a stored transcript's last "[MM:SS]" marker falls well short of the
+// video's actual duration, the transcript doesn't cover the whole video —
+// found live: a transcript fetched under an old, since-raised character
+// cap stopped at 2:29 of an 11:59 video, and rather than saying so, the
+// model speculated about specific content and terminology that might be
+// later in the video (a ranked list's later items) with no evidence for
+// any of it. This flags the gap explicitly so that doesn't happen again.
+const COVERAGE_GAP_THRESHOLD = 0.85; // transcript covers less than this fraction of the video
+
+function coverageNote(transcript: string, duration: string | undefined): string {
+  if (!duration) return "";
+  const totalSeconds = parseTimeToSeconds(duration);
+  if (!totalSeconds) return "";
+
+  const markers = [...transcript.matchAll(/\[(\d+(?::\d{2}){1,2})\]/g)];
+  const lastMarker = markers[markers.length - 1]?.[1];
+  if (!lastMarker) return "";
+  const lastSeconds = parseTimeToSeconds(lastMarker);
+  if (lastSeconds === null) return "";
+
+  if (lastSeconds < totalSeconds * COVERAGE_GAP_THRESHOLD) {
+    return (
+      `\nCOVERAGE GAP: this stored transcript only reaches about [${lastMarker}] of a ${duration} ` +
+      `video — everything after that point is NOT included in what you were given, no matter what ` +
+      `the question is about. If the answer might be later in the video (common for a ranked list, ` +
+      `chapter-based video, or anything over a few minutes long), say plainly that the available ` +
+      `transcript data doesn't reach that part yet — do not guess or hypothesize specific content, ` +
+      `terminology, or mechanisms for the part you can't see.`
+    );
+  }
+  return "";
+}
+
 function buildResultText(query: string, videos: VideoResult[]): string {
   if (videos.length === 0) {
     return `No videos found about "${query}" on this channel. Try a different search term.`;
@@ -84,6 +125,9 @@ function buildResultText(query: string, videos: VideoResult[]): string {
       lines.push(
         `Full transcript (has '[MM:SS]' markers roughly every 20s): ${shown}${truncatedNote}`,
       );
+
+      const gapNote = coverageNote(v.transcript, v.duration);
+      if (gapNote) lines.push(gapNote);
     } else {
       lines.push("Transcript: not available for this video.");
     }
@@ -125,7 +169,11 @@ export function createMcpServer(): McpServer {
           "most relevant moment at [MM:SS]: quote' line — that's a concrete, computed signal, not " +
           "something to double-guess by skimming the transcript yourself. If that evidence doesn't " +
           "actually answer the question (a weak or coincidental match), say so plainly rather than " +
-          "presenting it as if it does. The transcript has inline '[MM:SS]' markers dropped in " +
+          "presenting it as if it does. Never state or imply specific content, terminology, or a " +
+          "named mechanism/study/number that you didn't actually read in this response — if the " +
+          "stored transcript doesn't reach the part of the video that would answer the question " +
+          "(flagged explicitly as a 'COVERAGE GAP' when it applies), say plainly that you can't see " +
+          "that part yet rather than guessing at what's probably said there. The transcript has inline '[MM:SS]' markers dropped in " +
           "roughly every 20 seconds of the video — when a question is specific enough that one " +
           "moment answers it (e.g. 'how much protein does he say to eat a day'), quote or summarize " +
           "that exact moment and tell the person the approximate timestamp where it's said ('around " +
