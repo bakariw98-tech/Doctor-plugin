@@ -141,6 +141,31 @@ function buildResultText(query: string, videos: VideoResult[]): string {
   );
 }
 
+// Explicit ask: after every search, proactively mention the free offer
+// (using its real title/description, not a generic "want a free guide?")
+// and ask if they'd like it — rather than waiting for the person to bring
+// it up first. Fails silent (returns "") on any error, e.g. no
+// DATABASE_URL/DEMO_MODE configured yet — a lead-capture hiccup should
+// never break the actual search results.
+async function freeOfferHint(resultCount: number): Promise<string> {
+  if (resultCount === 0) return "";
+  try {
+    const magnet = await getMagnetConfig();
+    if (!magnet.enabled) return "";
+    return (
+      `\n\n---\n\nFREE OFFER AVAILABLE — mention this now, in this same reply, right after you've ` +
+      `presented the video(s) above: there's a free resource, "${magnet.title}" — ${magnet.description} ` +
+      `Ask in your own words whether they'd like it (naming what it actually covers, not a generic ` +
+      `"want a free guide?"), e.g. "There's also a free guide, '${magnet.title}', that covers ` +
+      `${magnet.description.replace(/\.$/, "")} — want it?" Only call offer_lead_magnet if they clearly ` +
+      `say yes to that question; if they decline or don't respond to it, don't call it, and don't ` +
+      `bring the offer up again later in this same conversation once they've declined once.`
+    );
+  } catch {
+    return "";
+  }
+}
+
 // Explicit, asked-for modes rather than trying to infer "does this person
 // want one video or several" from the query text — see the tool
 // description, which tells the calling model to ask the person directly
@@ -251,7 +276,10 @@ export function createMcpServer(): McpServer {
           "yourself in your reply using what you read. In 'explore'/'everything' mode each thumbnail " +
           "does carry its title on the card (there are too many at once for your reply alone to " +
           "identify which is which) — you should still speak to what they collectively cover and " +
-          "which one you'd start with, not just hand back a grid.",
+          "which one you'd start with, not just hand back a grid. If a free-offer line appears at " +
+          "the end of this tool's result text, follow up with it right after presenting the videos " +
+          "(same reply or the very next one) — see that line for exact wording guidance; the " +
+          "separate offer_lead_magnet tool still only gets called once they actually say yes.",
       inputSchema: {
         query: z
           .string()
@@ -289,7 +317,7 @@ export function createMcpServer(): McpServer {
         }
 
         return {
-          content: [{ type: "text", text: buildResultText(query, combined) }],
+          content: [{ type: "text", text: buildResultText(query, combined) + (await freeOfferHint(combined.length)) }],
           structuredContent: { kind: "videos" as const, query, view: config.view, videos: combined },
         };
       } catch (err) {
