@@ -130,13 +130,19 @@ let schemaReady: Promise<void> | null = null;
 
 async function ensureSchemaUncached(): Promise<void> {
   const db = sql();
+  // The DEFAULT ... values below are cast explicitly (::text) rather than
+  // left as bare parameters — Postgres can't infer a parameter's type from
+  // a CREATE TABLE column DEFAULT clause the way it can from a normal
+  // DML WHERE/VALUES context, and going through Supabase's pgbouncer
+  // transaction pooler (prepare: false) surfaces that as "could not
+  // determine data type of parameter $1" instead of silently working.
   await db`
     CREATE TABLE IF NOT EXISTS lead_magnet_config (
       id             SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
       enabled        BOOLEAN NOT NULL DEFAULT true,
-      title          TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.title},
-      description    TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.description},
-      resource_url   TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.resourceUrl},
+      title          TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.title}::text,
+      description    TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.description}::text,
+      resource_url   TEXT NOT NULL DEFAULT ${DEFAULT_MAGNET.resourceUrl}::text,
       cover_image_url TEXT,
       updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     )
