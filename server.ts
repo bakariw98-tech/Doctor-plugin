@@ -11,10 +11,12 @@ import path from "node:path";
 import { createMcpServer } from "./src/mcp-server.js";
 import { searchChannelVideos } from "./src/youtube.js";
 import { resolveView, type ViewOption } from "./src/view.js";
+import { handleAdminRequest, type AdminRequest } from "./src/admin.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // /admin's plain HTML forms
 app.use(express.static(path.join(import.meta.dirname, "public")));
 
 app.post("/mcp", async (req, res) => {
@@ -50,6 +52,36 @@ app.get("/api/search", async (req, res) => {
     res.status(500).json({ error: message });
   }
 });
+
+async function adminHandler(req: express.Request, res: express.Response) {
+  const action = typeof req.query.action === "string" ? req.query.action : undefined;
+  const adminReq: AdminRequest = {
+    method: req.method,
+    action,
+    body: req.method === "POST" ? (req.body as Record<string, string>) : {},
+    cookie: parseCookie(req.headers.cookie, "admin_session"),
+  };
+  try {
+    const result = await handleAdminRequest(adminReq);
+    for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
+    res.status(result.status).send(result.body);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).send(`<p>Admin page error: ${message}</p>`);
+  }
+}
+
+function parseCookie(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return undefined;
+}
+
+app.get("/admin", adminHandler);
+app.post("/admin", adminHandler);
 
 const PORT = Number(process.env.PORT ?? 3001);
 app.listen(PORT, () => {

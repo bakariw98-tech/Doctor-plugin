@@ -64,6 +64,33 @@ MCP-Apps-capable host (Claude, ChatGPT, etc.).
   `src/generated/*.ts` modules the server imports directly, since a plain
   `fs.readFile` at request time isn't reliable in a serverless bundle.
 
+### Lead capture (optional — needs Postgres, see Setup below)
+
+- **`offer_lead_magnet`** / **`submit_lead`** — two more tools in
+  `src/mcp-server.ts`. After a search, the model is instructed to ask (in
+  plain chat) whether the person wants a free related resource; on a yes it
+  calls `offer_lead_magnet`, which swaps the widget over to a small form
+  (email, name, plus whatever extra questions are configured). Submitting
+  it calls `submit_lead` — a tool marked `_meta.ui.visibility: ["app"]`, so
+  it's only callable by the widget itself (via `app.callServerTool`), never
+  by the model. The model never sees what someone typed into the form.
+- **`src/lead-form.ts`** — the form's rendering + submit/success/error
+  states, same pure-DOM-into-a-container shape as `src/carousel.ts`.
+  `src/mcp-app.ts` branches between the two based on a `kind` field in the
+  tool's `structuredContent`.
+- **`src/db.ts`** — the Postgres client (via
+  [`@neondatabase/serverless`](https://github.com/neondatabase/serverless)).
+  Owns the schema (`leads`, `lead_magnet_config`, `lead_form_questions`)
+  and creates it idempotently on first use — there's no migration step you
+  have to remember to run, though `npm run migrate` exists as a manual
+  connectivity check.
+- **`src/admin.ts`** — the `/admin` leads dashboard: a leads table, a CSV
+  export, and a settings form for the magnet content + extra questions.
+  Plain server-rendered HTML behind a shared-token cookie (`ADMIN_TOKEN`)
+  — not part of the MCP protocol or the widget's CSP, just an ordinary
+  password-protected page. `api/admin.ts` (Vercel) and the `/admin` routes
+  in `server.ts` (local dev) are thin adapters around it.
+
 ## Setup
 
 ### 1. Get a YouTube Data API key
@@ -129,13 +156,44 @@ git push         # redeploys automatically if Vercel is git-linked (see below)
 runs (locally via `npm run serve`, or on Vercel) — it's only read by the
 `fetch-transcripts` script itself.
 
+### Optional: turn on lead capture
+
+Search works with none of this set up — `offer_lead_magnet`, `submit_lead`,
+and `/admin` are the only things that need it, and they fail with a clear
+message (not a crash) if it's missing.
+
+1. **Provision Postgres** — in the Vercel dashboard, on this project, go to
+   **Storage → Create Database → Postgres** (Neon-backed). This is a manual,
+   one-time step; nothing in this repo can do it for you. It adds a
+   connection-string env var to the Vercel project automatically — check
+   **Settings → Environment Variables** for the exact name it used
+   (`DATABASE_URL` or `POSTGRES_URL` — `src/db.ts` checks both).
+2. **Pull it locally**: `vercel env pull .env` (or copy the value by hand)
+   so `npm run serve` and `npm run migrate` can reach the same database.
+3. **Set `ADMIN_TOKEN`** — any long random string (e.g. `openssl rand -hex
+   32`) — in both `.env` and the Vercel project's env vars. This is the
+   password for `/admin`; anyone who has it can read every lead, so treat
+   it like a real credential.
+4. Optionally run `npm run migrate` once to confirm the connection works
+   (creates the tables if they don't exist yet — though this also happens
+   automatically the first time any of this is actually used).
+5. Visit `/admin` (locally: `http://localhost:3001/admin`; deployed:
+   `https://<your-deployment>.vercel.app/admin`), log in with the token,
+   and fill in the real lead magnet (title, description, a real resource
+   URL — it starts as an obvious placeholder) plus any extra questions you
+   want the form to ask beyond email + name.
+
+**Local dev and Vercel preview deployments share the same database by
+default** unless you create a separate one — decide whether that's fine for
+testing or set up a second database before real leads start flowing in.
+
 ## Deploying to Vercel
 
 The repo deploys as-is (`vercel.json` wires the build + serverless
 functions): `npm run build` runs as the Vercel build command,
 `public/index.html` becomes the site root, and `api/mcp.ts` / `api/search.ts`
-become serverless functions at `/api/mcp` (also reachable at `/mcp`) and
-`/api/search`.
+/ `api/admin.ts` become serverless functions at `/api/mcp` (also reachable
+at `/mcp`), `/api/search`, and `/api/admin` (also reachable at `/admin`).
 
 **Environment variables are per-platform** — GitHub repo secrets are not
 visible to Vercel. Set `YOUTUBE_API_KEY` and either `YOUTUBE_CHANNEL_ID` or

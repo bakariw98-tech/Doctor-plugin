@@ -7,13 +7,17 @@
 // Refining a search happens by talking to the agent again.
 import { App } from "@modelcontextprotocol/ext-apps";
 import { renderVideos, type VideoResult, type ViewMode } from "./carousel";
+import { renderLeadForm, type LeadFormPayload } from "./lead-form";
 import { resolveView } from "./view";
 
-interface ToolPayload {
+interface VideoPayload {
+  kind?: "videos"; // optional for back-compat with older tool responses that predate this field
   query: string;
   view: ViewMode;
   videos: VideoResult[];
 }
+
+type ToolPayload = VideoPayload | LeadFormPayload;
 
 const root = document.getElementById("root")!;
 const statusEl = document.getElementById("status")!;
@@ -21,7 +25,9 @@ const fullscreenBar = document.getElementById("fullscreen-bar")!;
 const fullscreenToggle = document.getElementById("fullscreen-toggle") as HTMLButtonElement;
 
 const app = new App({ name: "Doctor Video Search", version: "1.0.0" });
-app.connect();
+app.connect().then(() => {
+  canSubmitLeads = Boolean(app.getHostCapabilities()?.serverTools);
+});
 
 let currentVideos: VideoResult[] = [];
 let currentView: ViewMode = "carousel";
@@ -58,11 +64,52 @@ function render() {
   updateFullscreenBar();
 }
 
+// offer_lead_magnet's form submits via app.callServerTool("submit_lead",
+// ...) rather than a host-pushed tool result, so the widget's own code
+// gets the outcome directly — no round trip through ontoolresult needed.
+// This requires the host to support server-initiated tool calls FROM the
+// app (a host capability, not something this app declares) — checked once
+// after connect() and used to render a working form vs. a plain fallback
+// message, rather than a submit button that would silently fail.
+let canSubmitLeads = false;
+
+async function submitLead(data: {
+  email: string;
+  name: string;
+  answers: Record<string, string>;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const result = await app.callServerTool({
+      name: "submit_lead",
+      arguments: { email: data.email, name: data.name || undefined, answers: data.answers },
+    });
+    if (result.isError) {
+      const text = result.content?.find((c) => c.type === "text")?.text;
+      return { ok: false, error: typeof text === "string" ? text : "Could not save — try again." };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not reach the server — try again." };
+  }
+}
+
 function applyPayload(payload: ToolPayload | undefined | null) {
   if (!payload) return;
+  inFullscreen = false;
+
+  if (payload.kind === "lead_form") {
+    fullscreenBar.hidden = true;
+    statusEl.textContent = "Free resource form loaded.";
+    if (canSubmitLeads) {
+      renderLeadForm(root, payload, submitLead);
+    } else {
+      root.innerHTML = `<p class="empty">This chat app can't submit the form directly — reply in the chat with your email and I'll pass it along.</p>`;
+    }
+    return;
+  }
+
   currentVideos = payload.videos ?? [];
   currentView = payload.view ?? "carousel";
-  inFullscreen = false;
   // Visually silent — the agent's own reply carries the words. This is
   // only for screen readers, which have no other way to know results
   // loaded (there's no visible status line to announce it for them).
