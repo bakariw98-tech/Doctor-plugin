@@ -111,5 +111,39 @@ export function renderVideos(
   for (const video of videos) {
     container.appendChild(renderThumb(video, onOpenExternal, showTitle));
   }
+
+  // The carousel's own scrollbar is hidden (mcp-app.html) for a cleaner
+  // look, which means nothing on screen otherwise shows there's more to
+  // scroll to — a small floating "swipe for more" chip fills that gap.
+  // Only for 'carousel': 'grid' scrolls vertically inside a normal page,
+  // which needs no special affordance the way a hidden horizontal
+  // scrollbar does.
+  if (view === "carousel") {
+    const wrapper = document.createElement("div");
+    wrapper.className = "shots-wrapper";
+    wrapper.appendChild(container);
+
+    const hint = document.createElement("div");
+    hint.className = "scroll-hint";
+    hint.setAttribute("aria-hidden", "true");
+    hint.innerHTML = `<span class="scroll-hint-chip">Swipe for more ›</span>`;
+    wrapper.appendChild(hint);
+    root.appendChild(wrapper);
+
+    const updateHint = () => {
+      const scrollable = container.scrollWidth > container.clientWidth + 4;
+      const atEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 4;
+      hint.classList.toggle("visible", scrollable && !atEnd);
+    };
+    container.addEventListener("scroll", updateHint, { passive: true });
+    // Thumbnails are still loading right after this runs, which can
+    // change scrollWidth — check now and shortly after so the hint
+    // doesn't flash on/off once images settle.
+    updateHint();
+    requestAnimationFrame(updateHint);
+    setTimeout(updateHint, 300);
+    return;
+  }
+
   root.appendChild(container);
 }

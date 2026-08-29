@@ -91,6 +91,21 @@
       }
       .view-strip::-webkit-scrollbar { display: none; }
       .view-strip .shot { flex: 0 0 186px; width: 186px; scroll-snap-align: start; }
+
+      /* Carousel scroll affordance (src/carousel.ts) — the strip's own
+         scrollbar is hidden above, so nothing else on screen shows
+         there's more to scroll to without this. */
+      .shots-wrapper { position: relative; }
+      .scroll-hint {
+        position: absolute; right: 4px; bottom: 12px;
+        opacity: 0; transition: opacity 200ms ease; pointer-events: none;
+      }
+      .scroll-hint.visible { opacity: 1; }
+      .scroll-hint-chip {
+        display: inline-block; background: var(--chip); color: #fff;
+        font-size: 11px; font-weight: 700; white-space: nowrap;
+        padding: 4px 9px; border-radius: 999px; box-shadow: var(--rest);
+      }
       .view-wall {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
