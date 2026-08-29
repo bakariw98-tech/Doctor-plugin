@@ -13,7 +13,7 @@ export interface LeadFormQuestion {
 export interface LeadFormPayload {
   kind: "lead_form";
   topic: string;
-  magnet: { title: string; description: string; coverImageUrl?: string | null };
+  magnet: { title: string; description: string; coverImageUrl?: string | null; resourceUrl: string };
   questions: LeadFormQuestion[];
 }
 
@@ -38,15 +38,20 @@ export function escapeHtml(input: string): string {
 }
 
 /**
- * Renders the form into `root`. `onSubmit` is a plain callback — it
- * shouldn't know anything about the App bridge itself (mcp-app.ts wires
- * app.callServerTool into it), matching how carousel.ts's
- * onOpenExternal keeps app.openLink out of the pure-render file.
+ * Renders the form into `root`. `onSubmit` and `onDownload` are plain
+ * callbacks — neither should know anything about the App bridge itself
+ * (mcp-app.ts wires app.callServerTool / app.downloadFile into them),
+ * matching how carousel.ts's onOpenExternal keeps app.openLink out of the
+ * pure-render file. `onDownload` fires once automatically right after a
+ * successful submit, and again on demand if the person taps the button
+ * (the host's own download prompt can be dismissed or blocked, so this
+ * needs to be re-triggerable, not a one-shot).
  */
 export function renderLeadForm(
   root: HTMLElement,
   payload: LeadFormPayload,
   onSubmit: (data: { email: string; name: string; answers: Record<string, string> }) => Promise<SubmitResult>,
+  onDownload: () => void,
 ) {
   root.innerHTML = "";
 
@@ -84,7 +89,7 @@ export function renderLeadForm(
       </label>
       ${questionFields}
       <p class="lead-error" hidden></p>
-      <button type="submit" class="lead-submit">Send it to me</button>
+      <button type="submit" class="lead-submit">Get it now</button>
     </form>
     </div>
   `;
@@ -120,9 +125,12 @@ export function renderLeadForm(
       wrap.innerHTML = `
         ${cover}
         <div class="lead-body">
-          <p class="lead-success">✓ Thanks — check your email for "${escapeHtml(payload.magnet.title)}".</p>
+          <p class="lead-success">✓ You're in — your download should start automatically.</p>
+          <button type="button" class="lead-submit lead-download-again">Download again</button>
         </div>
       `;
+      onDownload();
+      wrap.querySelector(".lead-download-again")?.addEventListener("click", () => onDownload());
     } else {
       submitBtn.disabled = false;
       submitBtn.textContent = "Send it to me";
