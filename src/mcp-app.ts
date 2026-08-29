@@ -93,6 +93,54 @@ async function submitLead(data: {
   }
 }
 
+const MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: "application/pdf",
+  zip: "application/zip",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  mp4: "video/mp4",
+  mp3: "audio/mpeg",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  csv: "text/csv",
+};
+
+function guessMimeType(url: string): string {
+  const ext = url.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
+  return (ext && MIME_BY_EXTENSION[ext]) || "application/octet-stream";
+}
+
+// Hands the resource straight to the person inside the chat, instead of
+// "check your email" — MCP Apps run in a sandboxed iframe where a direct
+// <a download> is blocked, so app.downloadFile() asks the host to do it
+// (the host typically shows its own confirmation dialog). Falls back to
+// just opening the link externally when the host doesn't support
+// host-mediated downloads at all, so there's still always a way to get
+// the file rather than a silently broken button.
+function downloadResource(magnet: { title: string; resourceUrl: string }) {
+  if (!app.getHostCapabilities()?.downloadFile) {
+    void app.openLink({ url: magnet.resourceUrl });
+    return;
+  }
+  void app
+    .downloadFile({
+      contents: [
+        {
+          type: "resource_link",
+          uri: magnet.resourceUrl,
+          name: magnet.title,
+          mimeType: guessMimeType(magnet.resourceUrl),
+        },
+      ],
+    })
+    .then((result) => {
+      if (result.isError) void app.openLink({ url: magnet.resourceUrl });
+    })
+    .catch(() => {
+      void app.openLink({ url: magnet.resourceUrl });
+    });
+}
+
 function applyPayload(payload: ToolPayload | undefined | null) {
   if (!payload) return;
   inFullscreen = false;
@@ -101,7 +149,7 @@ function applyPayload(payload: ToolPayload | undefined | null) {
     fullscreenBar.hidden = true;
     statusEl.textContent = "Free resource form loaded.";
     if (canSubmitLeads) {
-      renderLeadForm(root, payload, submitLead);
+      renderLeadForm(root, payload, submitLead, () => downloadResource(payload.magnet));
     } else {
       root.innerHTML = `<p class="empty">This chat app can't submit the form directly — reply in the chat with your email and I'll pass it along.</p>`;
     }

@@ -313,13 +313,16 @@ export function createMcpServer(): McpServer {
           "they've been asking about. IMPORTANT: only call this after you've explicitly asked the " +
           "person, in your own reply, whether they'd like it, and they've clearly said yes — never " +
           "call this proactively or silently after a search. Ask naturally, e.g. 'There's also a " +
-          "free related guide — want it sent to you?', and only proceed on an actual yes ('yes', " +
-          "'sure', 'sounds good'). If they decline or don't respond to that question, do not call " +
-          "this. It renders a small form (email, name, plus whatever extra questions the channel " +
-          "owner has configured) directly in the widget; the person fills it out and submits it " +
-          "themselves from there — you are never given their answers, so don't ask for the same " +
-          "information again in chat or claim to have sent anything yourself. After calling this, a " +
-          "brief 'Here's the form!' is enough — let the widget carry the rest.",
+          "free related guide — want it?', and only proceed on an actual yes ('yes', 'sure', " +
+          "'sounds good'). If they decline or don't respond to that question, do not call this. It " +
+          "renders a small form (email, name, plus whatever extra questions the channel owner has " +
+          "configured) directly in the widget; the person fills it out and submits it themselves " +
+          "from there — you are never given their answers, so don't ask for the same information " +
+          "again in chat. On submit the widget hands them the file directly, right there in the " +
+          "chat (a real download, not an email) — so don't say it'll be emailed to them or that " +
+          "you're sending anything yourself; if you mention delivery at all, say it downloads " +
+          "immediately. After calling this, a brief 'Here's the form!' is enough — let the widget " +
+          "carry the rest.",
       inputSchema: {
         topic: z
           .string()
@@ -351,7 +354,12 @@ export function createMcpServer(): McpServer {
           structuredContent: {
             kind: "lead_form" as const,
             topic,
-            magnet: { title: config.title, description: config.description, coverImageUrl: config.coverImageUrl },
+            magnet: {
+              title: config.title,
+              description: config.description,
+              coverImageUrl: config.coverImageUrl,
+              resourceUrl: config.resourceUrl,
+            },
             questions: questions.map((q) => ({ fieldKey: q.fieldKey, label: q.label, required: q.required })),
           },
         };
