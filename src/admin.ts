@@ -168,7 +168,15 @@ function leadsToCsv(leads: Lead[]): string {
 }
 
 async function dashboardPage(): Promise<AdminResponse> {
-  const [leads, config, questions] = await Promise.all([listLeads(), getMagnetConfig(), listQuestions()]);
+  // Sequential, not Promise.all — confirmed live that firing these three
+  // queries concurrently over the single shared connection (max: 1) hangs
+  // indefinitely against Supabase's pgbouncer transaction pooler (no
+  // response, no error, no timeout — a real deadlock, not just slow).
+  // offer_lead_magnet/submit_lead never hit this because each only ever
+  // issues one query at a time.
+  const leads = await listLeads();
+  const config = await getMagnetConfig();
+  const questions = await listQuestions();
 
   const leadRows = leads.length
     ? leads
