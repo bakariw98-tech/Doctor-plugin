@@ -10,7 +10,7 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { searchChannelVideos, getVideosByIds, type VideoResult } from "./youtube.js";
-import { findTranscriptMatches } from "./transcript-search.js";
+import { findTranscriptMatches, scoreTranscript } from "./transcript-search.js";
 import { resolveView } from "./view.js";
 import { WIDGET_HTML } from "./generated/widget-html.js";
 import { TRANSCRIPTS } from "./generated/transcripts.js";
@@ -30,7 +30,7 @@ const MAX_TRANSCRIPT_BOOSTED = 3;
 // one video while the widget kept showing the full list) — narrowing the
 // actual result set here, automatically, is what makes "just show me the
 // one video" actually happen on the first call instead of the second.
-const DECISIVE_MIN_SCORE = 2000; // at least 2 distinct query terms covered
+const DECISIVE_MIN_SCORE = 6; // roughly: one moderately distinctive term, matched a couple of times
 const DECISIVE_MARGIN = 1.75; // top score must lead the runner-up by this much
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
@@ -80,6 +80,19 @@ function buildResultText(query: string, videos: VideoResult[]): string {
     if (v.description) lines.push(`Description: ${v.description}`);
     if (v.tags?.length) lines.push(`Tags: ${v.tags.join(", ")}`);
     if (v.transcript) {
+      // Explicit score + quoted evidence up front, not something to infer
+      // from skimming the full transcript below — this is what actually
+      // fixes "picked the video that felt related instead of the one with
+      // real evidence": don't make the model judge relevance itself when
+      // a concrete number and quote can do it instead.
+      const { score, evidence } = scoreTranscript(query, v.transcript, TRANSCRIPTS);
+      if (evidence) {
+        lines.push(
+          `Transcript match: score ${score.toFixed(1)} — most relevant moment at [${evidence.timestamp}]: ` +
+            `"${evidence.quote}"`,
+        );
+      }
+
       const cap = allotted[i];
       const shown = v.transcript.slice(0, cap);
       const truncatedNote =
@@ -88,8 +101,7 @@ function buildResultText(query: string, videos: VideoResult[]): string {
             "isn't shown; say so rather than guessing about anything past it]"
           : "";
       lines.push(
-        `Transcript (has '[MM:SS]' markers roughly every 20s — cite the nearest one when the ` +
-          `answer is specific): ${shown}${truncatedNote}`,
+        `Full transcript (has '[MM:SS]' markers roughly every 20s): ${shown}${truncatedNote}`,
       );
     } else {
       lines.push("Transcript: not available for this video.");
@@ -137,9 +149,19 @@ export function createMcpServer(): McpServer {
           "uploads — not every video has one, and very new videos may not be in it yet), it's the " +
           "actual spoken content and is far more reliable for judging fit than the description or " +
           "title; prefer it when deciding which video to recommend and when describing what a video " +
-          "actually covers. The transcript has inline '[MM:SS]' markers dropped in roughly every 20 " +
+          "actually covers. Every video with a transcript also comes with an explicit 'Transcript " +
+          "match: score N — most relevant moment at [MM:SS]: quote' line — that's a concrete, " +
+          "computed signal, not something to double-guess by skimming the transcript yourself. When " +
+          "several videos are returned, prefer the one with the highest match score and an actual " +
+          "quoted statement over one that merely shares the general topic (e.g. a video that " +
+          "specifically says 'butter' beats one that's broadly about animal fat, if the question was " +
+          "about butter specifically) — a direct, substantive statement always wins over topical " +
+          "similarity. Once you've picked the video that has real evidence, stick with it: don't " +
+          "second-guess it afterward by recommending a different, more general video, and don't " +
+          "answer a narrower question with a broader summary of the channel's overall position. The " +
+          "transcript has inline '[MM:SS]' markers dropped in roughly every 20 " +
           "seconds of the video — when a question is specific enough that one moment answers it (e.g. " +
-          "'how much protein does he say to eat a day'), search the transcript for that answer and " +
+          "'how much protein does he say to eat a day'), quote or summarize that exact moment and " +
           "tell the person the approximate timestamp where it's said ('around 4:20 he says...'), not " +
           "just that the video covers the topic. There's no timestamped link to give them — say the " +
           "time in words so they can skip to it themselves. The " +
