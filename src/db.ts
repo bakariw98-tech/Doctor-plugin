@@ -57,6 +57,16 @@ function sql() {
       // works against either connection string, not just the direct one.
       max: 1,
       prepare: false,
+      // postgres.js normally fetches custom-type metadata from pg_catalog
+      // on first connection and relies on a Describe round-trip to infer
+      // each parameter's type. Both break through pgbouncer's transaction
+      // pooling mode (confirmed live: even a plain `INSERT ... VALUES
+      // (${text})` failed with "could not determine data type of
+      // parameter $1"). Disabling type-fetching plus casting every
+      // interpolated value explicitly below (::text/::boolean/::integer)
+      // sidesteps both — Postgres never needs to ask the pooler for a
+      // type it wasn't told.
+      fetch_types: false,
     });
   }
   return sqlClient;
@@ -223,8 +233,8 @@ export async function updateMagnetConfig(input: Partial<MagnetConfig>): Promise<
   const next = { ...current, ...input };
   const rows = await sql()`
     UPDATE lead_magnet_config
-    SET enabled = ${next.enabled}, title = ${next.title}, description = ${next.description},
-        resource_url = ${next.resourceUrl}, cover_image_url = ${next.coverImageUrl}, updated_at = now()
+    SET enabled = ${next.enabled}::boolean, title = ${next.title}::text, description = ${next.description}::text,
+        resource_url = ${next.resourceUrl}::text, cover_image_url = ${next.coverImageUrl}::text, updated_at = now()
     WHERE id = 1
     RETURNING enabled, title, description, resource_url, cover_image_url
   `;
@@ -288,7 +298,7 @@ export async function addQuestion(input: { label: string; required: boolean }): 
   const base = slugify(input.label);
   let fieldKey = base;
   for (let suffix = 2; ; suffix++) {
-    const existing = await db`SELECT 1 FROM lead_form_questions WHERE field_key = ${fieldKey}`;
+    const existing = await db`SELECT 1 FROM lead_form_questions WHERE field_key = ${fieldKey}::text`;
     if (existing.length === 0) break;
     fieldKey = `${base}_${suffix}`;
   }
@@ -298,7 +308,7 @@ export async function addQuestion(input: { label: string; required: boolean }): 
 
   const rows = await db`
     INSERT INTO lead_form_questions (label, field_key, required, sort_order)
-    VALUES (${input.label}, ${fieldKey}, ${input.required}, ${next_order})
+    VALUES (${input.label}::text, ${fieldKey}::text, ${input.required}::boolean, ${next_order}::integer)
     RETURNING id, field_key, label, required, sort_order
   `;
   return toQuestion(rows[0] as never);
@@ -311,7 +321,7 @@ export async function deleteQuestion(id: number): Promise<void> {
     return;
   }
   await ensureSchema();
-  await sql()`DELETE FROM lead_form_questions WHERE id = ${id}`;
+  await sql()`DELETE FROM lead_form_questions WHERE id = ${id}::integer`;
 }
 
 export async function insertLead(input: {
@@ -330,7 +340,7 @@ export async function insertLead(input: {
   await ensureSchema();
   const rows = await sql()`
     INSERT INTO leads (email, name, topic, answers)
-    VALUES (${input.email}, ${input.name}, ${input.topic}, ${JSON.stringify(input.answers)}::jsonb)
+    VALUES (${input.email}::text, ${input.name}::text, ${input.topic}::text, ${JSON.stringify(input.answers)}::jsonb)
     RETURNING id, email, name, topic, answers, created_at
   `;
   const row = rows[0] as { id: number; email: string; name: string | null; topic: string | null; answers: Record<string, string>; created_at: string };
