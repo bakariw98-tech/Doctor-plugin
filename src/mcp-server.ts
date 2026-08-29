@@ -31,7 +31,7 @@ const MAX_TRANSCRIPT_BOOSTED = 3;
 // actual result set here, automatically, is what makes "just show me the
 // one video" actually happen on the first call instead of the second.
 const DECISIVE_MIN_SCORE = 6; // roughly: one moderately distinctive term, matched a couple of times
-const DECISIVE_MARGIN = 1.75; // top score must lead the runner-up by this much
+const DECISIVE_MARGIN = 1.6; // top score must lead the runner-up by this much
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.

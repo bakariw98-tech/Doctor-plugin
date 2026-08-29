@@ -102,45 +102,83 @@ function buildQuote(text: string, queryTerms: string[], idf: Map<string, number>
   return `${prefix}${text.slice(start, end).trim()}${suffix}`;
 }
 
+function windowWeight(text: string, queryTerms: string[], idf: Map<string, number>): number {
+  const lower = text.toLowerCase();
+  let weight = 0;
+  for (const term of queryTerms) {
+    const occurrences = lower.split(term).length - 1;
+    weight += termWeight(idf.get(term)!, occurrences);
+  }
+  return weight;
+}
+
+// For transcripts with no "[MM:SS]" markers (the older flat-text ones,
+// fetched before timestamps were added) there are no natural chunk
+// boundaries to build windows from — so slide a fixed-size character
+// window across the raw text instead. Same peak-density principle as the
+// chunk-based path below, just without a real timestamp to attach to the
+// result (there's nothing honest to cite), so these contribute to ranking
+// without an evidence quote.
+const FLAT_WINDOW_SIZE = 400;
+const FLAT_WINDOW_STEP = 200;
+
+function bestFlatWindowWeight(transcript: string, queryTerms: string[], idf: Map<string, number>): number {
+  let best = 0;
+  for (let i = 0; i < transcript.length; i += FLAT_WINDOW_STEP) {
+    const weight = windowWeight(transcript.slice(i, i + FLAT_WINDOW_SIZE), queryTerms, idf);
+    if (weight > best) best = weight;
+  }
+  return best;
+}
+
+// The score is the PEAK weight of any single ~40-second window in the
+// transcript, not a sum across the whole video. Summing rewards a video
+// that scatters several individually-uncommon words across ten minutes
+// (found live: a video that never says "butter" at all still out-scored
+// the one that does, purely by repeating "saturated" and "animal" many
+// times across a long transcript) — peak-window scoring instead asks "is
+// there one moment where this is actually being talked about together,"
+// which is a much closer match to what a direct, substantive statement
+// actually looks like versus diffuse topical overlap.
 function scoreAndExtractEvidence(
   transcript: string,
   queryTerms: string[],
   idf: Map<string, number>,
 ): { score: number; evidence: Evidence | null } {
-  const lowerFull = transcript.toLowerCase();
-  let score = 0;
-  for (const term of queryTerms) {
-    const occurrences = lowerFull.split(term).length - 1;
-    score += termWeight(idf.get(term)!, occurrences);
-  }
-  if (score === 0) return { score: 0, evidence: null };
-
-  // Evidence: the best-scoring 2-chunk sliding window, not a single raw
-  // [MM:SS] chunk. Supadata's segment boundaries land wherever the
-  // caption track happens to break, not at sentence edges — a chunk can
-  // end "...animal fat and even" with the next one picking up "butter are
-  // not entirely saturated fat," splitting credit for the very word that
-  // matters across two chunks and burying the actual quote behind
-  // whichever half scores higher alone. Pairing each chunk with the next
-  // one before scoring keeps a straddling sentence intact.
   const chunks = splitIntoChunks(transcript);
+
+  // Some stored transcripts have no "[MM:SS]" markers at all (the older,
+  // flat-text ones fetched before timestamps were added) — use the
+  // character sliding window above instead of chunk-based windows, but
+  // keep the same peak-density scoring rather than falling back to a
+  // whole-document sum (which would silently favor these older, longer
+  // transcripts over the ranking logic applied to timestamped ones).
+  if (chunks.length === 0) {
+    const weight = bestFlatWindowWeight(transcript, queryTerms, idf);
+    return weight > 0 ? { score: weight, evidence: null } : { score: 0, evidence: null };
+  }
+
+  // Evidence comes from a 2-chunk sliding window, not a single raw chunk
+  // — Supadata's segment boundaries land wherever the caption track
+  // happens to break, not at sentence edges, so a chunk can end
+  // "...animal fat and even" with the next one picking up "butter are not
+  // entirely saturated fat," splitting the key word's context across two
+  // chunks. Pairing each chunk with the next before scoring keeps a
+  // straddling sentence intact.
   let best: { text: string; timestamp: string; weight: number } | null = null;
   for (let i = 0; i < chunks.length; i++) {
     const windowText = chunks[i + 1] ? `${chunks[i].text} ${chunks[i + 1].text}` : chunks[i].text;
-    const lower = windowText.toLowerCase();
-    let weight = 0;
-    for (const term of queryTerms) {
-      const occurrences = lower.split(term).length - 1;
-      weight += termWeight(idf.get(term)!, occurrences);
-    }
+    const weight = windowWeight(windowText, queryTerms, idf);
     if (weight > 0 && (!best || weight > best.weight)) {
       best = { text: windowText, timestamp: chunks[i].timestamp, weight };
     }
   }
 
-  const evidence: Evidence | null = best ? { timestamp: best.timestamp, quote: buildQuote(best.text, queryTerms, idf) } : null;
-
-  return { score, evidence };
+  if (!best) return { score: 0, evidence: null };
+  return {
+    score: best.weight,
+    evidence: { timestamp: best.timestamp, quote: buildQuote(best.text, queryTerms, idf) },
+  };
 }
 
 // Inverse document frequency, computed against the local transcript
