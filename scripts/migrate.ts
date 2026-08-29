@@ -7,8 +7,8 @@
 // connectivity once, right after provisioning, without going through the
 // app.
 //
-// Run: npm run migrate   (reads DATABASE_URL/POSTGRES_URL from .env via
-// Node's --env-file, same as npm run fetch-transcripts)
+// Run: npm run migrate   (reads DATABASE_URL from .env via Node's
+// --env-file, same as npm run fetch-transcripts)
 import { ensureSchema, getMagnetConfig } from "../src/db.js";
 
 async function main() {
