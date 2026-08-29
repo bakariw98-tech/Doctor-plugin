@@ -7,39 +7,45 @@
 // survives between the "show form" call and the "submit form" call
 // except what's actually persisted.
 //
-// Uses @neondatabase/serverless's HTTP-based `neon()` client rather than
-// @vercel/postgres (deprecated as of writing, in favor of Neon's own SDK —
-// npm warns about this directly) or a pooled TCP client (unnecessary and
-// awkward in a request-per-invocation serverless function).
+// Uses the plain `postgres` driver (porsager/postgres) against a Supabase
+// project's connection string — Supabase, not Vercel's own Postgres/Neon
+// storage integration, since that's the account/dashboard already in use
+// here and there's no reason to introduce a second one. Any standard
+// Postgres connection string works the same way, so this isn't
+// Supabase-specific code, just a Supabase-sourced connection string.
 //
-// Requires a Postgres database provisioned via the Vercel dashboard
-// (Storage -> Create Database -> Postgres/Neon) — that's a manual,
-// one-time step outside this repo; see .env.example and README.md. This
-// module cannot create the database itself, only the tables inside it.
-import { neon } from "@neondatabase/serverless";
+// Requires a Supabase project (supabase.com — free tier is fine) set up
+// once outside this repo; see .env.example and README.md. This module
+// creates the tables inside that database, not the database itself.
+import postgres from "postgres";
 
-// Vercel's Neon integration has used a couple of different env var names
-// across versions (DATABASE_URL is Neon's own convention; POSTGRES_URL is
-// what the older @vercel/postgres integration set and some Neon setups
-// still mirror it for back-compat) — check both rather than assuming one.
 function requireConnectionString(): string {
-  const url = process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim();
+  const url = process.env.DATABASE_URL?.trim();
   if (!url) {
     throw new Error(
-      "Set DATABASE_URL (or POSTGRES_URL) in the environment — provision a Postgres database via " +
-        "the Vercel dashboard (Storage -> Create Database) first. See .env.example.",
+      "Set DATABASE_URL in the environment — create a Supabase project (supabase.com) and copy its " +
+        "connection string first. See .env.example.",
     );
   }
   return url;
 }
 
-// Pin the generic params (row objects, not arrays; not the "full results
-// with metadata" shape) so every query's result type is a plain
-// Record<string, any>[] instead of a union TypeScript can't narrow.
-let sqlClient: ReturnType<typeof neon<false, false>> | null = null;
+let sqlClient: ReturnType<typeof postgres> | null = null;
 
 function sql() {
-  if (!sqlClient) sqlClient = neon<false, false>(requireConnectionString());
+  if (!sqlClient) {
+    sqlClient = postgres(requireConnectionString(), {
+      // One connection per serverless invocation rather than a pool —
+      // this runs in a fresh process per request (see file header), so a
+      // pool would just open connections it never gets to reuse.
+      // Supabase's pooled "Transaction" connection string (recommended
+      // for serverless, see README) proxies through pgbouncer, which
+      // doesn't support prepared statements — turn them off so this
+      // works against either connection string, not just the direct one.
+      max: 1,
+      prepare: false,
+    });
+  }
   return sqlClient;
 }
 
