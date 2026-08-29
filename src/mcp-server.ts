@@ -147,26 +147,39 @@ function buildResultText(query: string, videos: VideoResult[]): string {
 // it up first. Fails silent (returns "") on any error, e.g. no
 // DATABASE_URL/DEMO_MODE configured yet — a lead-capture hiccup should
 // never break the actual search results.
-async function freeOfferHint(resultCount: number): Promise<string> {
-  if (resultCount === 0) return "";
+interface OfferSummary {
+  title: string;
+  description: string;
+}
+
+// Two independent channels for the same signal, not one: `hintText` goes
+// into the tool's prose content (some hosts only feed the model that),
+// and the caller also gets `offer` as a plain structured object for
+// structuredContent — models trained heavily on function-calling often
+// weight a clean, explicit field more reliably than a line of embedded
+// prose, even though neither one is actually enforced (an MCP server has
+// no way to force a host's model into a follow-up tool call either way;
+// this only improves the odds it's noticed and acted on).
+async function getFreeOffer(resultCount: number): Promise<{ hintText: string; offer: OfferSummary | null }> {
+  if (resultCount === 0) return { hintText: "", offer: null };
   try {
     const magnet = await getMagnetConfig();
-    if (!magnet.enabled) return "";
+    if (!magnet.enabled) return { hintText: "", offer: null };
     // Placed FIRST in the tool result, ahead of the video details — see
     // the call site for why (some hosts truncate long tool-result text,
     // and a trailing hint after a big transcript blob can get cut off
     // silently before the model ever sees it).
-    return (
+    const hintText =
       `Note: there's also a free resource related to this topic, "${magnet.title}" — ${magnet.description} ` +
       `Worth mentioning in your reply, right after you present the video(s) below. ` +
       `Ask in your own words whether they'd like it (naming what it actually covers, not a generic ` +
       `"want a free guide?"), e.g. "There's also a free guide, '${magnet.title}', that covers ` +
       `${magnet.description.replace(/\.$/, "")} — want it?" Only call offer_lead_magnet if they clearly ` +
       `say yes to that question; if they decline or don't respond to it, don't call it, and don't ` +
-      `bring the offer up again later in this same conversation once they've declined once.\n\n---\n\n`
-    );
+      `bring the offer up again later in this same conversation once they've declined once.\n\n---\n\n`;
+    return { hintText, offer: { title: magnet.title, description: magnet.description } };
   } catch {
-    return "";
+    return { hintText: "", offer: null };
   }
 }
 
@@ -296,10 +309,12 @@ export function createMcpServer(): McpServer {
           "which one you'd start with, not just hand back a grid. 'explore' renders as a horizontally " +
           "scrollable strip — mention in your reply that they can scroll/swipe through the rest " +
           "(e.g. 'swipe through for a few more options'), since that isn't otherwise obvious from a " +
-          "static screenshot-like view. If a free-offer line appears at the start of this tool's " +
-          "result text, follow up with it right after presenting the videos (same reply or the very " +
-          "next one) — see that line for wording guidance; the separate offer_lead_magnet tool still " +
-          "only gets called once they actually say yes.",
+          "static screenshot-like view. When there's a free offer to mention, it's given to you two " +
+          "ways: a line at the start of this tool's result text with wording guidance, and as a " +
+          "structured `offer: { title, description }` object in this response's structured data (null " +
+          "when there's none). Either way, follow up on it right after presenting the videos (same " +
+          "reply or the very next one) — the separate offer_lead_magnet tool still only gets called " +
+          "once they actually say yes.",
       inputSchema: {
         query: z
           .string()
@@ -351,9 +366,10 @@ export function createMcpServer(): McpServer {
         // can run long enough to push a trailing hint past that cutoff
         // silently. Leading with it means it survives regardless of how
         // long the rest of the response runs.
+        const { hintText, offer } = await getFreeOffer(combined.length);
         return {
-          content: [{ type: "text", text: (await freeOfferHint(combined.length)) + buildResultText(query, combined) }],
-          structuredContent: { kind: "videos" as const, query, view: config.view, videos: combined },
+          content: [{ type: "text", text: hintText + buildResultText(query, combined) }],
+          structuredContent: { kind: "videos" as const, query, view: config.view, videos: combined, offer },
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
