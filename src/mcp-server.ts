@@ -196,7 +196,19 @@ const MAX_TRANSCRIPT_BOOSTED = 5;
  * match if one exists, otherwise YouTube's own top keyword result.
  */
 async function gatherVideos(query: string, maxResults: number): Promise<VideoResult[]> {
-  const localMatches = findTranscriptMatches(query, TRANSCRIPTS, Math.max(maxResults, MAX_TRANSCRIPT_BOOSTED));
+  const allLocalMatches = findTranscriptMatches(query, TRANSCRIPTS, Math.max(maxResults, MAX_TRANSCRIPT_BOOSTED));
+
+  // Only trust a local match that comes with a real, quotable evidence
+  // excerpt — a match with none (an older, un-timestamped transcript,
+  // scored via the flat character-sliding-window path) has no way for
+  // the model or the person to verify it's actually about the right
+  // thing. Calibrated directly against a real report of a bad
+  // recommendation: "lower back pain" — a topic this channel plausibly
+  // has nothing on — still scored 7.98 with no evidence, higher than
+  // several genuinely relevant, evidenced matches elsewhere. The score
+  // number alone doesn't distinguish a real match from that kind of
+  // noise; requiring evidence does.
+  const localMatches = allLocalMatches.filter((m) => m.evidence !== null);
 
   if (maxResults === 1) {
     if (localMatches[0]) {
@@ -291,7 +303,15 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         query: z
           .string()
-          .describe("Symptom, topic, or question to search the channel for, e.g. 'lower back pain'."),
+          .describe(
+            "A single short, focused search phrase — one symptom, topic, or specific question, e.g. " +
+              "'lower back pain' or 'how much protein should I eat'. Keep this to roughly a sentence " +
+              "or less. If the person actually asked something long or multi-part (several distinct " +
+              "sub-questions, an elaborate scenario, a whole paragraph), don't pass that whole thing " +
+              "through as-is — first identify its single core topic yourself and search for just " +
+              "that; a long, multi-topic string dilutes matching across too many unrelated concepts " +
+              "for any one video to score well, even when a video does cover part of what was asked.",
+          ),
         mode: z
           .enum(["best", "explore", "everything"])
           .optional()
