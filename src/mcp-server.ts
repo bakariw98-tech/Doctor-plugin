@@ -141,6 +141,16 @@ function buildResultText(query: string, videos: VideoResult[]): string {
   );
 }
 
+// The Supabase Storage origin the widget needs on its CSP allowlist to
+// actually load an uploaded cover photo — same env var src/storage.ts
+// uploads to, so this only ever needs to be set once. Returns null (no
+// entry added) rather than throwing when unset, since the resource
+// registration below must succeed even without lead-capture configured.
+function supabaseStorageOrigin(): string | null {
+  const url = process.env.SUPABASE_URL?.trim();
+  return url ? url.replace(/\/+$/, "") : null;
+}
+
 // Explicit ask: after every search, proactively mention the free offer
 // (using its real title/description, not a generic "want a free guide?")
 // and ask if they'd like it — rather than waiting for the person to bring
@@ -507,9 +517,18 @@ export function createMcpServer(): McpServer {
               // No video embed (no frameDomains needed) — tapping a video
               // always opens it externally via app.openLink instead of
               // playing inline, so there's no iframe CSP to fight across
-              // hosts. resourceDomains covers the YouTube thumbnail images.
+              // hosts. resourceDomains covers every external image the
+              // widget actually loads: YouTube's thumbnails, plus the
+              // Supabase Storage bucket the lead-magnet's cover photo is
+              // uploaded to (src/storage.ts) — confirmed live that
+              // without this, the host silently blocks the cover image
+              // (no error anywhere, it just renders blank) since it's
+              // not on this allowlist.
               csp: {
-                resourceDomains: ["https://i.ytimg.com"],
+                resourceDomains: [
+                  "https://i.ytimg.com",
+                  ...(supabaseStorageOrigin() ? [supabaseStorageOrigin()!] : []),
+                ],
               },
             },
           },
