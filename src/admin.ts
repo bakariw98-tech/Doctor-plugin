@@ -27,17 +27,23 @@ import {
 } from "./db.js";
 import { uploadResourceFile } from "./storage.js";
 
+export interface UploadedFile {
+  filename: string;
+  mimetype: string;
+  data: Buffer;
+}
+
 export interface AdminRequest {
   method: string;
   action: string | undefined; // ?action=... query param
   body: Record<string, string>; // parsed form fields (POST only) — from either body encoding
   cookie: string | undefined; // the raw admin_session cookie value, if present
-  // Present only on a multipart save-config submission that included a
-  // file in the "resourceFile" field. The api/admin.ts (Vercel) and
-  // server.ts (local dev) adapters parse multipart bodies themselves and
-  // hand the raw bytes through here — this module never touches HTTP
-  // parsing directly.
-  file?: { filename: string; mimetype: string; data: Buffer };
+  // Present only on a multipart save-config submission — keyed by form
+  // field name ("resourceFile", "coverImageFile"), one entry per file
+  // actually included. The api/admin.ts (Vercel) and server.ts (local
+  // dev) adapters parse multipart bodies themselves and hand the raw
+  // bytes through here — this module never touches HTTP parsing directly.
+  files?: Record<string, UploadedFile>;
 }
 
 export interface AdminResponse {
@@ -261,7 +267,19 @@ async function dashboardPage(): Promise<AdminResponse> {
               Max 4&nbsp;MB. For a bigger file, host it elsewhere and paste the direct link below instead.
             </p>
             <label><span>Or paste a direct URL instead of uploading</span><input type="url" name="resourceUrl" placeholder="Leave blank to use the uploaded file above" /></label>
-            <label><span>Cover image URL (optional)</span><input type="url" name="coverImageUrl" value="${escapeHtml(config.coverImageUrl ?? "")}" placeholder="Leave blank for a plain gradient cover" /></label>
+            <label>
+              <span>Cover photo (optional)</span>
+              <input type="file" name="coverImageFile" accept=".png,.jpg,.jpeg,.webp,.gif" />
+            </label>
+            <p class="sub" style="margin:-6px 0 12px;">
+              ${
+                config.coverImageUrl
+                  ? `Current cover: <a href="${escapeHtml(config.coverImageUrl)}" target="_blank" rel="noopener">view image</a>. Upload a new one to replace it, or leave this blank to keep it.`
+                  : "No cover photo set — the form shows a plain gradient icon instead."
+              }
+              Max 4&nbsp;MB.
+            </p>
+            <label><span>Or paste a direct image URL instead of uploading</span><input type="url" name="coverImageUrl" placeholder="Leave blank to keep the current cover" /></label>
             <button type="submit">Save</button>
           </form>
         </div>
@@ -333,21 +351,30 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
     // keep whatever's already stored — an empty submit (neither field
     // touched) must not blank out a working link.
     const current = await getMagnetConfig();
+    // Same precedence for both files: an upload wins, then a typed URL,
+    // then whatever's already stored — an empty submit (neither field
+    // touched) must not blank out a working link.
     let resourceUrl = req.body.resourceUrl?.trim() || current.resourceUrl;
-    if (req.file && req.file.data.length > 0) {
-      try {
-        resourceUrl = await uploadResourceFile(req.file.data, req.file.filename, req.file.mimetype);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return html(500, page("Leads dashboard", `<p class="error">Could not upload the file: ${escapeHtml(message)}</p><p><a href="/admin">Back</a> — your other changes were not saved; re-submit the form.</p>`));
+    let coverImageUrl = req.body.coverImageUrl?.trim() || current.coverImageUrl;
+    const resourceFile = req.files?.resourceFile;
+    const coverImageFile = req.files?.coverImageFile;
+    try {
+      if (resourceFile && resourceFile.data.length > 0) {
+        resourceUrl = await uploadResourceFile(resourceFile.data, resourceFile.filename, resourceFile.mimetype);
       }
+      if (coverImageFile && coverImageFile.data.length > 0) {
+        coverImageUrl = await uploadResourceFile(coverImageFile.data, coverImageFile.filename, coverImageFile.mimetype);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return html(500, page("Leads dashboard", `<p class="error">Could not upload the file: ${escapeHtml(message)}</p><p><a href="/admin">Back</a> — your other changes were not saved; re-submit the form.</p>`));
     }
     await updateMagnetConfig({
       enabled: req.body.enabled === "on",
       title: req.body.title ?? "",
       description: req.body.description ?? "",
       resourceUrl,
-      coverImageUrl: req.body.coverImageUrl?.trim() || null,
+      coverImageUrl,
     });
     return redirect("/admin");
   }
