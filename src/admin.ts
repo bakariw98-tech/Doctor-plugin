@@ -115,11 +115,14 @@ const PAGE_STYLE = `
   button, .btn { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px;
     border-radius: 6px; border: 1px solid #d8d3cc; background: #fff; cursor: pointer; }
   button.danger { color: #c0392b; border-color: #e5b4ac; }
+  button.primary { color: #fff; background: #b5541f; border-color: #b5541f; padding: 9px 18px; font-size: 14px; }
   .actions { margin-top: 8px; display: flex; gap: 8px; }
   .card { border: 1px solid #e7e2da; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; }
   .checkbox-row input { width: auto; }
   .error { color: #c0392b; font-size: 13px; margin: 0 0 16px; }
+  .notice { background: #fdf3e9; border: 1px solid #edd3b3; border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; margin: 0 0 16px; }
 `;
 
 function page(title: string, body: string): string {
@@ -247,6 +250,7 @@ async function dashboardPage(): Promise<AdminResponse> {
 
         <h2>Free resource offer</h2>
         <div class="card">
+          <p class="notice">Choosing a file below does not save it right away — it only queues it. Nothing is saved, and no photo/file actually uploads, until you click <strong>Save changes</strong> at the very bottom of this box.</p>
           <form method="post" action="/admin?action=save-config" enctype="multipart/form-data">
             <div class="checkbox-row">
               <input type="checkbox" id="enabled" name="enabled" ${config.enabled ? "checked" : ""} />
@@ -280,7 +284,7 @@ async function dashboardPage(): Promise<AdminResponse> {
               Max 4&nbsp;MB.
             </p>
             <label><span>Or paste a direct image URL instead of uploading</span><input type="url" name="coverImageUrl" placeholder="Leave blank to keep the current cover" /></label>
-            <button type="submit">Save</button>
+            <button type="submit" class="primary">Save changes</button>
           </form>
         </div>
 
