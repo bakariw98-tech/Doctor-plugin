@@ -54,6 +54,16 @@ export interface AdminResponse {
 
 const COOKIE_NAME = "admin_session";
 
+// The cover photo is a small widget thumbnail (rendered well under 400px
+// wide), not a downloadable asset — a real report traced ChatGPT's widget
+// sandbox not showing it (while Claude's rendered it fine) to the stored
+// cover being a 1.9MB, 1672x941 PNG straight off a phone/screenshot, no
+// resizing anywhere in this upload path. There's no image library here to
+// downsize it server-side, so the cap is enforced instead: reject an
+// oversized cover with a clear ask rather than silently accepting
+// something that may not render everywhere.
+const MAX_COVER_IMAGE_BYTES = 400 * 1024;
+
 // Applies to every response from this module — an ordinary web page
 // outside the MCP/ext-apps resource system, so it gets its own
 // conventional security headers rather than reusing the widget's ui://
@@ -367,6 +377,11 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
         resourceUrl = await uploadResourceFile(resourceFile.data, resourceFile.filename, resourceFile.mimetype);
       }
       if (coverImageFile && coverImageFile.data.length > 0) {
+        if (coverImageFile.data.length > MAX_COVER_IMAGE_BYTES) {
+          const gotKb = Math.round(coverImageFile.data.length / 1024);
+          const maxKb = Math.round(MAX_COVER_IMAGE_BYTES / 1024);
+          return html(400, page("Leads dashboard", `<p class="error">That cover photo is ${gotKb}KB — please resize it under ${maxKb}KB (a phone screenshot or full-size photo is usually 1-2MB; most photo apps have a "resize" or "compress" option, or use a free online image compressor) and upload it again.</p><p><a href="/admin">Back</a> — your other changes were not saved; re-submit the form.</p>`));
+        }
         coverImageUrl = await uploadResourceFile(coverImageFile.data, coverImageFile.filename, coverImageFile.mimetype);
       }
     } catch (err) {
