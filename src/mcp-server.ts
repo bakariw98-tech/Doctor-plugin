@@ -510,35 +510,49 @@ export function createMcpServer(): McpServer {
     "Doctor Video Search",
     RESOURCE_URI,
     { mimeType: RESOURCE_MIME_TYPE },
-    async () => ({
-      contents: [
-        {
-          uri: RESOURCE_URI,
-          mimeType: RESOURCE_MIME_TYPE,
-          text: WIDGET_HTML,
-          _meta: {
-            ui: {
-              // No video embed (no frameDomains needed) — tapping a video
-              // always opens it externally via app.openLink instead of
-              // playing inline, so there's no iframe CSP to fight across
-              // hosts. resourceDomains covers every external image the
-              // widget actually loads: YouTube's thumbnails, plus the
-              // Supabase Storage bucket the lead-magnet's cover photo is
-              // uploaded to (src/storage.ts) — confirmed live that
-              // without this, the host silently blocks the cover image
-              // (no error anywhere, it just renders blank) since it's
-              // not on this allowlist.
-              csp: {
-                resourceDomains: [
-                  "https://i.ytimg.com",
-                  ...(supabaseStorageOrigin() ? [supabaseStorageOrigin()!] : []),
-                ],
+    async () => {
+      const RESOURCE_DOMAINS = [
+        "https://i.ytimg.com",
+        ...(supabaseStorageOrigin() ? [supabaseStorageOrigin()!] : []),
+      ];
+      return {
+        contents: [
+          {
+            uri: RESOURCE_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: WIDGET_HTML,
+            _meta: {
+              ui: {
+                // No video embed (no frameDomains needed) — tapping a video
+                // always opens it externally via app.openLink instead of
+                // playing inline, so there's no iframe CSP to fight across
+                // hosts. resourceDomains covers every external image the
+                // widget actually loads: YouTube's thumbnails, plus the
+                // Supabase Storage bucket the lead-magnet's cover photo is
+                // uploaded to (src/storage.ts) — confirmed live that
+                // without this, the host silently blocks the cover image
+                // (no error anywhere, it just renders blank) since it's
+                // not on this allowlist.
+                csp: {
+                  resourceDomains: RESOURCE_DOMAINS,
+                },
+              },
+              // ChatGPT's documented legacy compatibility key — same list,
+              // snake_case field names. Per OpenAI's own Apps SDK reference,
+              // the standard ui.csp above is "preferred" but this older key
+              // is still what some ChatGPT surfaces actually enforce; the
+              // lead-magnet cover photo rendering fine on Claude but staying
+              // blank specifically on ChatGPT matches that gap exactly.
+              // Costs nothing to duplicate — Claude ignores unknown _meta
+              // keys, so this is pure belt-and-suspenders for ChatGPT.
+              "openai/widgetCSP": {
+                resource_domains: RESOURCE_DOMAINS,
               },
             },
           },
-        },
-      ],
-    }),
+        ],
+      };
+    },
   );
 
   return server;
