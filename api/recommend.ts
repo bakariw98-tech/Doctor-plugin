@@ -1,8 +1,12 @@
-// api/search.ts
+// api/recommend.ts
 // Plain REST endpoint (not part of MCP) backing the standalone demo page
-// at the site root — GET /api/search?q=... -> { query, videos }.
+// at the site root — GET /api/recommend?q=... -> { question, products }.
+// Shares src/recommend.ts with the MCP tool so the preview and the real
+// thing match; the one difference is that this path does not log the
+// question, since a developer poking at the demo isn't the creator's
+// audience asking for something and shouldn't pollute the gap report.
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { searchChannelVideos } from "../src/youtube.js";
+import { pickProducts, toWire } from "../src/recommend.js";
 import { resolveView, type ViewOption } from "../src/view.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -13,8 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  if (!query) {
+  const question = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (!question) {
     res.status(400).json({ error: "Missing required query parameter 'q'." });
     return;
   }
@@ -24,9 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const viewParam = typeof req.query.view === "string" ? (req.query.view as ViewOption) : undefined;
 
   try {
-    const videos = await searchChannelVideos(query, maxResults ?? 8);
-    const view = resolveView(viewParam, videos.length);
-    res.status(200).json({ query, view, videos });
+    const { products, quality } = await pickProducts(question, maxResults ?? 8);
+    const view = resolveView(viewParam, products.length);
+    res.status(200).json({
+      question,
+      view,
+      matchQuality: quality,
+      products: products.map((p) => toWire(p, null)),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });

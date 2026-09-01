@@ -8,3 +8,4 @@ src/generated/
 
 # Seeded design-canvas output — regenerated from design/*.dc.html + canvas.json
 design/doctor-video-results.html
+leads-export.csv

@@ -3,6 +3,7 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/mcp", "destination": "/api/mcp" },
-    { "source": "/admin", "destination": "/api/admin" }
+    { "source": "/admin", "destination": "/api/admin" },
+    { "source": "/r/:id", "destination": "/api/redirect?id=:id" }
   ]
 }

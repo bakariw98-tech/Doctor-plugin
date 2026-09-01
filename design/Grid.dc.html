@@ -11,6 +11,9 @@
     :root{
       --page:  oklch(0.995 0.002 60);
       --text:  oklch(0.26 0.008 60);
+      --card:  oklch(1 0 0);
+      --shade: oklch(0.965 0.004 60);
+      --line:  oklch(0.89 0.006 60);
       --chip:  oklch(0.17 0.01 60 / 0.88);
       --rest:  0 1px 2px oklch(0.2 0.01 60 / 0.07), 0 4px 12px oklch(0.2 0.01 60 / 0.07);
       --lift:  0 2px 4px oklch(0.2 0.01 60 / 0.10), 0 12px 28px oklch(0.2 0.01 60 / 0.13);
@@ -19,6 +22,9 @@
     .dark{
       --page:  oklch(0.185 0.006 60);
       --text:  oklch(0.93 0.004 60);
+      --card:  oklch(0.225 0.006 60);
+      --shade: oklch(0.165 0.006 60);
+      --line:  oklch(0.32 0.008 60);
       --chip:  oklch(0.12 0.01 60 / 0.90);
       --rest:  0 1px 2px oklch(0 0 0 / 0.30), 0 4px 12px oklch(0 0 0 / 0.32);
       --lift:  0 2px 4px oklch(0 0 0 / 0.38), 0 12px 28px oklch(0 0 0 / 0.44);
@@ -26,85 +32,119 @@
     }
     *{ box-sizing: border-box; }
     body{
-      margin: 0;
-      background: var(--page);
-      color: var(--text);
+      margin: 0; background: var(--page); color: var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    a{ color: var(--ring); text-decoration: none; }
-    a:hover{ color: var(--ring); }
 
-
-    /* THE ENTIRE WIDGET. A thumbnail is the whole component: no frame,
-       no surface, no label. Title rides in aria-label for screen readers. */
-    .shot{
-      position: relative; display: block; flex: 0 0 auto;
-      aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
-      background: oklch(0.5 0.01 60);
-      box-shadow: var(--rest); outline: none;
+    /* THE COMPONENT, AT TWO DENSITIES. Unlike the video widget this
+       replaced, text lives inside the card: someone about to spend money
+       needs the name and the buy affordance at the point of the tap.
+       See README.md — this reversal is deliberate. */
+    .pcard{
+      display: block; text-align: left; margin: 0;
+      border-radius: 12px; overflow: hidden;
+      background: var(--card); border: 1px solid var(--line);
+      box-shadow: var(--rest);
       transition: box-shadow 160ms ease, transform 160ms ease;
     }
-    .shot img{ width: 100%; height: 100%; object-fit: cover; display: block; }
-    .shot:hover{ transform: translateY(-2px); box-shadow: var(--lift); }
-    .shot:focus-visible{ box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--ring); }
-
-    /* Kept: it sits ON the image, adds no layout, and the agent cannot
-       recite eight durations in a sentence. Easy to remove if unwanted. */
-    .dur{
-      position: absolute; right: 6px; bottom: 6px;
-      background: var(--chip); color: #fff;
-      font-size: 11.5px; font-weight: 600; line-height: 1;
-      font-variant-numeric: tabular-nums; letter-spacing: 0.012em;
-      padding: 4px 6px; border-radius: 5px;
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    /* contain, not cover: product shots are centred objects on white and
+       cropping to fill cuts the product in half. */
+    .pimg{
+      display: flex; align-items: center; justify-content: center;
+      aspect-ratio: 1 / 1; background: var(--shade); overflow: hidden;
     }
-    .cue{
-      position: absolute; inset: 0; display: grid; place-items: center;
-      background: oklch(0.15 0.01 60 / 0.28);
-      opacity: 0; transition: opacity 160ms ease;
-    }
-    .shot:hover .cue{ opacity: 1; }
-    .cue svg{ filter: drop-shadow(0 1px 3px oklch(0 0 0 / 0.5)); }
+    .pimg img{ width: 100%; height: 100%; object-fit: contain; display: block; }
+    .pbody{ padding: 12px; }
+    .pname{ margin: 0; font-size: 14px; font-weight: 650; line-height: 1.3; }
+    .pprice{ font-size: 12.5px; opacity: 0.6; font-variant-numeric: tabular-nums; }
 
-    .wall{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-    .wall .shot{ width: 100%; }
+    /* Compact (4+ and fullscreen): the whole tile is the button. */
+    .compact{ cursor: pointer; }
+    .compact .pbody{ padding: 9px 10px 11px; }
+    .compact .pname{ font-size: 12.5px; }
+    .compact .pprice{ display: block; margin-top: 3px; font-size: 11.5px; }
+    .compact:hover{ transform: translateY(-2px); box-shadow: var(--lift); }
+
+    /* Detail (1 and 2-3): an <article> containing exactly ONE button.
+       Never also clickable as a whole — a button inside a button is
+       invalid and breaks keyboard traversal. */
+    .detail .pimg{ aspect-ratio: 4 / 3; }
+    .detail .pbody{ padding: 14px 16px 16px; }
+    .pbrand{ margin: 0 0 3px; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.5; }
+    .detail .pname{ font-size: 17px; letter-spacing: -0.01em; }
+    /* The creator's own words — full weight, full opacity. This is the
+       substance of the recommendation, not a caption. */
+    .pblurb{ margin: 9px 0 0; font-size: 14px; line-height: 1.5; }
+    .pfor{ margin: 7px 0 0; font-size: 13px; line-height: 1.45; opacity: 0.62; }
+    .pact{ display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+    .pbuy{
+      font: inherit; font-size: 14px; font-weight: 650; color: #fff;
+      background: var(--ring); border: 0; border-radius: 8px;
+      padding: 9px 18px; cursor: pointer;
+    }
+    .compact{ width: 100%; }
   </style>
 </helmet>
-<div class="{{themeClass}}" style="padding: 16px;">
-
-  <div class="wall">
-    <sc-for list="{{videos}}" as="v" hint-placeholder-count="6">
-      <a class="shot" href="{{v.url}}" target="_blank" rel="noopener" aria-label="{{v.title}}">
-            <img src="{{v.thumb}}" alt="">
-            <span class="cue">
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="11" fill="rgba(255,255,255,0.94)"/>
-                <path d="M10 8.6l6 3.4-6 3.4V8.6z" fill="#141414"/>
-              </svg>
-            </span>
-            <span class="dur">{{v.duration}}</span>
-          </a>
-    </sc-for>
-  </div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;padding:20px">
+      <button class="pcard compact" aria-label="Get 8-inch chef's knife">
+        <span class="pimg"><img src="./just-do-this.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">8-inch chef's knife</span>
+          <span class="pprice">~$85</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get End-grain board">
+        <span class="pimg"><img src="./omad-fasting.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">End-grain board</span>
+          <span class="pprice">~$120</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Cast iron skillet">
+        <span class="pimg"><img src="./autophagy-this.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Cast iron skillet</span>
+          <span class="pprice">~$30</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Fish spatula">
+        <span class="pimg"><img src="./fasting-state.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Fish spatula</span>
+          <span class="pprice">~$18</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Bench scraper">
+        <span class="pimg"><img src="./rethink-fasting.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Bench scraper</span>
+          <span class="pprice">~$12</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Pepper mill">
+        <span class="pimg"><img src="./no-fast-autophagy.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Pepper mill</span>
+          <span class="pprice">~$45</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Dutch oven">
+        <span class="pimg"><img src="./just-do-this.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Dutch oven</span>
+          <span class="pprice">~$110</span>
+        </span>
+      </button>
+      <button class="pcard compact" aria-label="Get Digital thermometer">
+        <span class="pimg"><img src="./omad-fasting.jpg" alt=""></span>
+        <span class="pbody">
+          <span class="pname">Digital thermometer</span>
+          <span class="pprice">~$40</span>
+        </span>
+      </button>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":900,"height":285}}'>
-class Component extends DCLogic {
-  renderVals() {
-    return {
-      themeClass: this.props.dark ? 'dark' : '',
-      videos: [
-        { title: "You Don't Need to Fast for Autophagy — Just Do THIS", thumb: "just-do-this.jpg", duration: "0:24", url: "https://www.youtube.com/watch?v=irOV-aEeqDc" },
-        { title: "You DON'T Need To Fast For AUTOPHAGY!", thumb: "no-fast-autophagy.jpg", duration: "0:57", url: "https://www.youtube.com/watch?v=vhyPlX27ztw" },
-        { title: "Autophagy Does Not Occur Because Of Fasting, But Because Of THIS", thumb: "autophagy-this.jpg", duration: "0:42", url: "https://www.youtube.com/watch?v=UHVyeBU0xMQ" },
-        { title: "Benefits Of OMAD & Fasting On A Carnivore Diet?", thumb: "omad-fasting.jpg", duration: "3:29", url: "https://www.youtube.com/watch?v=D5jTJj_FbC4" },
-        { title: "FASTING STATE Is Our PRIMARY Metabolic State!", thumb: "fasting-state.jpg", duration: "0:55", url: "https://www.youtube.com/watch?v=d9eAuHhCV8A" },
-        { title: "You'll Have To RETHINK FASTING After Watching This!", thumb: "rethink-fasting.jpg", duration: "1:08", url: "https://www.youtube.com/watch?v=89EISwhgLaw" }
-      ]
-    };
-  }
-}
-</script>
 </body>
 </html>

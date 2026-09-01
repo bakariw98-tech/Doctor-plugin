@@ -85,12 +85,14 @@ function parseCookie(header: string | undefined, name: string): string | undefin
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = typeof req.query.action === "string" ? req.query.action : undefined;
+  const edit = typeof req.query.edit === "string" ? req.query.edit : undefined;
 
   try {
     const { fields, files } = req.method === "POST" ? await parseRequest(req) : { fields: {}, files: {} };
     const adminReq: AdminRequest = {
       method: req.method ?? "GET",
       action,
+      edit,
       body: fields,
       cookie: parseCookie(req.headers.cookie, "admin_session"),
       files,

@@ -1,8 +1,10 @@
 // server.ts
-// Local dev server: serves the MCP endpoint, the /api/search REST helper,
-// and the static demo page (public/index.html) all from one Express app,
-// mirroring what api/mcp.ts + api/search.ts + public/ serve on Vercel.
-console.log("Starting Doctor YouTube MCP App server...");
+// Local dev server: serves the MCP endpoint, the /api/recommend REST
+// helper, the /r/<id> click redirect, and the static demo page
+// (public/index.html) all from one Express app, mirroring what
+// api/mcp.ts + api/recommend.ts + api/redirect.ts + public/ serve on
+// Vercel.
+console.log("Starting Creator Picks MCP App server...");
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import Busboy from "busboy";
@@ -10,18 +12,19 @@ import cors from "cors";
 import express from "express";
 import path from "node:path";
 import { createMcpServer } from "./src/mcp-server.js";
-import { searchChannelVideos } from "./src/youtube.js";
+import { getProduct, logClick } from "./src/db.js";
+import { pickProducts, toWire } from "./src/recommend.js";
 import { resolveView, type ViewOption } from "./src/view.js";
 import { handleAdminRequest, type AdminRequest, type UploadedFile } from "./src/admin.js";
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // matches api/admin.ts — Vercel's request body cap, per file
 
 // express.urlencoded()/json() below only consume bodies whose Content-Type
-// they match, so a multipart save-config submission reaches this handler
+// they match, so a multipart product submission reaches this handler
 // with its raw stream untouched — parse it the same way api/admin.ts does
 // on Vercel, so local dev (npm run serve) behaves identically. Files are
-// keyed by form field name ("resourceFile", "coverImageFile"), one entry
-// per file actually included.
+// keyed by form field name ("imageFile"), one entry per file actually
+// included.
 function parseMultipart(req: express.Request): Promise<{ fields: Record<string, string>; files: Record<string, UploadedFile> }> {
   return new Promise((resolve, reject) => {
     const busboy = Busboy({ headers: req.headers as Record<string, string>, limits: { fileSize: MAX_UPLOAD_BYTES } });
@@ -76,9 +79,9 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-app.get("/api/search", async (req, res) => {
-  const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  if (!query) {
+app.get("/api/recommend", async (req, res) => {
+  const question = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (!question) {
     res.status(400).json({ error: "Missing required query parameter 'q'." });
     return;
   }
@@ -87,17 +90,52 @@ app.get("/api/search", async (req, res) => {
   const viewParam = typeof req.query.view === "string" ? (req.query.view as ViewOption) : undefined;
 
   try {
-    const videos = await searchChannelVideos(query, maxResults ?? 8);
-    const view = resolveView(viewParam, videos.length);
-    res.status(200).json({ query, view, videos });
+    const { products, quality } = await pickProducts(question, maxResults ?? 8);
+    const view = resolveView(viewParam, products.length);
+    res.status(200).json({
+      question,
+      view,
+      matchQuality: quality,
+      products: products.map((p) => toWire(p, null)),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
   }
 });
 
+// Click redirect — mirrors api/redirect.ts. The destination is always
+// looked up by id and never read from the request, so there's no open
+// redirect here; see that file's header for the full reasoning.
+app.get("/r/:id", async (req, res) => {
+  const productId = Number(req.params.id);
+  if (!Number.isFinite(productId)) {
+    res.status(404).send("Not found.");
+    return;
+  }
+  let product;
+  try {
+    product = await getProduct(productId);
+  } catch {
+    res.status(502).send("Could not look that up. Please try again.");
+    return;
+  }
+  if (!product) {
+    res.status(404).send("Not found.");
+    return;
+  }
+  const rawQuestion = typeof req.query.q === "string" ? Number(req.query.q) : NaN;
+  try {
+    await logClick({ productId, questionId: Number.isFinite(rawQuestion) ? rawQuestion : null });
+  } catch {
+    // Analytics must never cost a sale.
+  }
+  res.redirect(302, product.buyUrl);
+});
+
 async function adminHandler(req: express.Request, res: express.Response) {
   const action = typeof req.query.action === "string" ? req.query.action : undefined;
+  const edit = typeof req.query.edit === "string" ? req.query.edit : undefined;
   try {
     let body: Record<string, string> = {};
     let files: AdminRequest["files"];
@@ -112,6 +150,7 @@ async function adminHandler(req: express.Request, res: express.Response) {
     const adminReq: AdminRequest = {
       method: req.method,
       action,
+      edit,
       body,
       cookie: parseCookie(req.headers.cookie, "admin_session"),
       files,

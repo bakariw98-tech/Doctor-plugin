@@ -1,19 +1,20 @@
 <!-- index.html -->
 <!-- Standalone browser demo of the widget. Deployed as the site root on
-     Vercel so you can test search and all four layouts without needing a
-     Claude/ChatGPT connector. The actual MCP App widget (mcp-app.html)
-     shares its rendering code with this page via src/carousel.ts and its
-     view logic via src/view.ts, so the thumbnails you see here are pixel
-     -for-pixel what renders in chat. What's different here: a search box
-     and a view dropdown, because this page has no chat agent standing in
-     for either — in the real widget the chat is the search box, and the
-     view is picked automatically (or by the model, on request). -->
+     Vercel so you can test the flow and all four layouts without needing
+     a Claude/ChatGPT connector. The actual MCP App widget (mcp-app.html)
+     shares its rendering code with this page via src/product-card.ts and
+     its view logic via src/view.ts, so the cards here are pixel-for-pixel
+     what renders in chat. What's different here: a question box, a view
+     dropdown, and a visible status line, because this page has no chat
+     agent standing in for any of them — in the real widget the chat is
+     the question box, the view is picked automatically, and the agent
+     speaks the framing this page has to put in the status line. -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Doctor Video Search — Demo</title>
+    <title>Creator Picks — Demo</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -27,6 +28,8 @@
         --ring:  #b5541f;
         --btn-bg: #ffffff;
         --btn-border: #d8d3cc;
+        --card:  #ffffff;
+        --shade: #f4f1ed;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -40,6 +43,8 @@
           --ring:  #d98a4f;
           --btn-bg: #2b2926;
           --btn-border: #45413c;
+          --card:  #2b2926;
+          --shade: #1f1d1b;
         }
       }
       * { box-sizing: border-box; }
@@ -80,24 +85,33 @@
       #search-form button:disabled { opacity: 0.6; cursor: default; }
       #status { font-size: 12px; color: var(--muted); margin-bottom: 10px; min-height: 16px; }
 
-      /* The one component, four containers — identical to mcp-app.html. */
-      .view-solo .shot { width: 100%; max-width: 420px; }
-      .view-split { display: flex; gap: 10px; }
-      .view-split .shot { flex: 1 1 0; min-width: 0; }
+      /* Two components, four containers — identical to mcp-app.html. `card`/`spotlight` draw the full
+         pick (photo, name, the creator's line, Get it); `carousel`/`grid`
+         draw a compact tile that is itself the button. See
+         src/product-card.ts. */
+      .view-solo .pcard { width: 100%; max-width: 460px; }
+      .view-split { display: flex; gap: 12px; flex-wrap: wrap; }
+      .view-split .pcard { flex: 1 1 240px; min-width: 0; }
       .view-strip {
         display: flex; gap: 10px; overflow-x: auto;
-        scroll-snap-type: x mandatory; padding-bottom: 6px;
+        scroll-snap-type: x mandatory; padding-bottom: 4px;
         scrollbar-width: none;
       }
       .view-strip::-webkit-scrollbar { display: none; }
-      .view-strip .shot { flex: 0 0 186px; width: 186px; scroll-snap-align: start; }
+      .view-strip .pcard { flex: 0 0 168px; width: 168px; scroll-snap-align: start; }
+      .view-wall {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+        gap: 10px;
+      }
+      .view-wall .pcard { width: 100%; }
 
-      /* Carousel scroll affordance (src/carousel.ts) — the strip's own
+      /* Carousel scroll affordance (src/product-card.ts) — the strip's own
          scrollbar is hidden above, so nothing else on screen shows
          there's more to scroll to without this. */
       .shots-wrapper { position: relative; }
       .scroll-hint {
-        position: absolute; right: 4px; bottom: 12px;
+        position: absolute; right: 4px; bottom: 10px;
         opacity: 0; transition: opacity 200ms ease; pointer-events: none;
       }
       .scroll-hint.visible { opacity: 1; }
@@ -106,57 +120,88 @@
         font-size: 11px; font-weight: 700; white-space: nowrap;
         padding: 4px 9px; border-radius: 999px; box-shadow: var(--rest);
       }
-      .view-wall {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 12px;
-      }
-      .view-wall .shot { width: 100%; }
 
-      .shot {
-        position: relative; display: block; width: 100%;
-        aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
-        border: 0; padding: 0; margin: 0; cursor: pointer;
-        background: #000; box-shadow: var(--rest);
+      .pcard {
+        display: block; text-align: left; margin: 0;
+        border-radius: 12px; overflow: hidden;
+        background: var(--card); border: 1px solid var(--btn-border);
+        box-shadow: var(--rest);
         transition: box-shadow 160ms ease, transform 160ms ease;
       }
-      .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-      .shot:hover { transform: translateY(-2px); box-shadow: var(--lift); }
-      .shot:focus-visible {
+      /* Product photography is usually a centred object on white, so it's
+         contained on a neutral ground rather than cropped to fill the way
+         a 16:9 video still was — `cover` here cuts the product in half. */
+      .pcard-img {
+        display: flex; align-items: center; justify-content: center;
+        aspect-ratio: 1 / 1; background: var(--shade); overflow: hidden;
+      }
+      .pcard-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      .pcard-noimg { color: var(--text); opacity: 0.28; }
+      .pcard-body { display: block; padding: 12px; }
+      .pcard-name {
+        display: block; margin: 0;
+        font-size: 14px; font-weight: 650; line-height: 1.3; color: var(--text);
+      }
+      .pcard-price {
+        display: inline-block; font-size: 12.5px; color: var(--text);
+        opacity: 0.6; font-variant-numeric: tabular-nums;
+      }
+
+      /* Compact: the whole tile is the button (carousel/grid). */
+      .pcard-compact {
+        border: 1px solid var(--btn-border); padding: 0; cursor: pointer;
+        font-family: inherit; width: 100%;
+      }
+      .pcard-compact .pcard-body { padding: 9px 10px 11px; }
+      .pcard-compact .pcard-name {
+        font-size: 12.5px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .pcard-compact .pcard-price { margin-top: 3px; font-size: 11.5px; }
+      .pcard-compact:hover { transform: translateY(-2px); box-shadow: var(--lift); }
+      .pcard-compact:focus-visible {
         outline: none;
         box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--ring);
       }
-      .dur {
-        position: absolute; right: 6px; bottom: 6px;
-        background: var(--chip); color: #fff;
-        font-size: 11px; font-weight: 600; line-height: 1;
-        font-variant-numeric: tabular-nums; letter-spacing: 0.012em;
-        padding: 4px 6px; border-radius: 5px;
-        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+
+      /* Detail: an article containing exactly one button. Deliberately NOT
+         clickable as a whole — a button inside a button is invalid and
+         breaks keyboard traversal. */
+      .pcard-detail .pcard-img { aspect-ratio: 4 / 3; }
+      .pcard-detail .pcard-body { padding: 14px 16px 16px; }
+      .pcard-brand {
+        margin: 0 0 3px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.06em; text-transform: uppercase;
+        color: var(--text); opacity: 0.5;
       }
-      /* carousel/grid thumbnails carry a title (see src/carousel.ts) —
-         move the duration chip out of the caption's way when one's present. */
-      .shot:has(.title) .dur { bottom: auto; top: 6px; }
-      .cue {
-        position: absolute; inset: 0; display: flex;
-        align-items: center; justify-content: center;
-        background: rgba(20, 18, 15, 0.28);
-        opacity: 0; transition: opacity 160ms ease;
+      .pcard-detail .pcard-name { font-size: 17px; letter-spacing: -0.01em; }
+      /* The creator's own words. Full weight and full opacity on purpose:
+         this is the substance of the recommendation, not supporting
+         chrome, and it should not read as a caption. */
+      .pcard-blurb {
+        margin: 9px 0 0; font-size: 14px; line-height: 1.5; color: var(--text);
       }
-      .shot:hover .cue, .shot:focus-visible .cue { opacity: 1; }
-      .cue svg { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5)); }
-      .title {
-        position: absolute; left: 0; right: 0; bottom: 0;
-        padding: 20px 8px 6px;
-        background: linear-gradient(to top, rgba(10, 9, 8, 0.88), rgba(10, 9, 8, 0));
-        color: #fff; font-size: 11.5px; font-weight: 600; line-height: 1.25;
-        text-align: left;
-        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-        overflow: hidden; text-overflow: ellipsis;
-        pointer-events: none;
+      .pcard-for {
+        margin: 7px 0 0; font-size: 13px; line-height: 1.45;
+        color: var(--text); opacity: 0.62;
+      }
+      .pcard-actions {
+        display: flex; align-items: center; gap: 12px; margin-top: 14px;
+      }
+      .pcard-buy {
+        font: inherit; font-size: 14px; font-weight: 650; color: #fff;
+        background: var(--ring); border: 0; border-radius: 8px;
+        padding: 9px 18px; cursor: pointer;
+      }
+      .pcard-buy:hover { filter: brightness(1.08); }
+      .pcard-buy:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--ring);
       }
 
-      .empty { font-size: 13px; color: var(--muted); }
+      .empty { font-size: 13px; color: var(--text); opacity: 0.6; }
+
       footer { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); }
       footer a { color: inherit; }
       footer code { color: var(--text); }
@@ -164,32 +209,34 @@
   </head>
   <body>
     <div id="page">
-      <h1>Doctor Video Search</h1>
+      <h1>Creator Picks</h1>
       <p class="subtitle">
-        Live demo of the widget's thumbnails — search runs against the
-        channel configured on the server. In chat there's no search box or
-        view picker: the chat is the search box, and the layout below is
-        chosen automatically by result count (or by the model, on
-        request). Tap a video to open it on YouTube.
+        Live demo of the recommendation cards — matched against the
+        product catalog configured on the server. In chat there's no
+        question box or view picker: the chat is the question box, and the
+        layout below is chosen automatically by result count. Tap Get it
+        to go straight to the purchase link.
       </p>
       <div id="app">
         <form id="search-form">
           <input
             id="search-input"
             type="text"
-            placeholder="Search this channel (e.g. &quot;lower back pain&quot;)"
+            placeholder="Ask what they use (e.g. &quot;what knife do you use for everyday cooking&quot;)"
           />
           <select id="view-select" aria-label="View"></select>
-          <button id="search-button" type="submit">Search</button>
+          <button id="search-button" type="submit">Ask</button>
         </form>
         <div id="status" role="status" aria-live="polite"></div>
         <div id="root"></div>
       </div>
       <footer>
-        This page is a browser-only preview of the widget's thumbnails —
-        in chat there is no search box, view picker, or status line; the
-        agent speaks and the tool picks the layout. The real MCP endpoint
-        for connecting Claude/ChatGPT is at <code>/api/mcp</code>.
+        This page is a browser-only preview of the widget's cards — in
+        chat there is no question box, view picker, or status line; the
+        agent speaks and the tool picks the layout. Get it links route
+        through <code>/r/&lt;id&gt;</code> so clicks are counted against
+        the question that produced them. The real MCP endpoint for
+        connecting Claude/ChatGPT is at <code>/api/mcp</code>.
       </footer>
     </div>
     <script type="module" src="/src/demo.ts"></script>

@@ -1,18 +1,19 @@
 {
-  "name": "doctor-youtube-mcp-app",
+  "name": "creator-picks-mcp-app",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "MCP App that searches a doctor's YouTube channel and renders results as a playable video carousel inside the chat.",
+  "description": "MCP App that answers 'what do you use for this' with the creator's own product pick and a direct purchase link.",
   "scripts": {
     "build:app": "INPUT=mcp-app.html OUTDIR=dist vite build",
     "build:demo": "INPUT=index.html OUTDIR=public vite build",
-    "build": "npm run build:app && npm run build:demo && node scripts/embed-widget.mjs && node scripts/embed-transcripts.mjs",
+    "build": "npm run build:app && npm run build:demo && node scripts/embed-widget.mjs",
+    "typecheck": "tsc --noEmit",
     "serve": "npx tsx server.ts",
     "start": "npm run build && npm run serve",
     "dev": "npm run build && npm run serve",
-    "fetch-transcripts": "tsx --env-file=.env scripts/fetch-transcripts.ts",
-    "migrate": "tsx --env-file=.env scripts/migrate.ts"
+    "migrate": "tsx --env-file=.env scripts/migrate.ts",
+    "retire-leads": "tsx --env-file=.env scripts/retire-leads.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",

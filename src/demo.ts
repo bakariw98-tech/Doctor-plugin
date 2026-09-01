@@ -1,16 +1,17 @@
 // src/demo.ts
-// Standalone browser demo — no MCP host required. Talks to /api/search
-// directly so you can try search + both layouts in a plain browser tab
+// Standalone browser demo — no MCP host required. Talks to /api/recommend
+// directly so you can try the flow and every layout in a plain browser tab
 // (this is what's deployed at the site root on Vercel). The view selector
-// exercises the exact same resolveView logic the MCP tool uses, so you
-// can compare "auto" against forcing either layout without a chat client.
-import { renderVideos, type VideoResult, type ViewMode } from "./carousel";
-import { VIEW_OPTIONS, type ViewOption } from "./view";
+// exercises the exact same resolveView logic the MCP tool uses, so you can
+// compare "auto" against forcing any layout without a chat client.
+import { renderProducts, type ProductPick } from "./product-card";
+import { VIEW_OPTIONS, type ViewOption, type ViewMode } from "./view";
 
-interface SearchResponse {
-  query: string;
+interface RecommendResponse {
+  question: string;
   view: ViewMode;
-  videos: VideoResult[];
+  matchQuality?: "strong" | "weak" | "none";
+  products: ProductPick[];
   error?: string;
 }
 
@@ -34,11 +35,11 @@ viewSelect.innerHTML = VIEW_OPTIONS.map(
   (option) => `<option value="${option}">${VIEW_LABELS[option]}</option>`,
 ).join("");
 
-let currentVideos: VideoResult[] = [];
+let currentProducts: ProductPick[] = [];
 let currentView: ViewMode = "carousel";
 
 function render() {
-  renderVideos(root, currentVideos, currentView, (url) => {
+  renderProducts(root, currentProducts, currentView, (url) => {
     window.open(url, "_blank", "noopener,noreferrer");
   });
   // Grid is the fullscreen layout in the real widget — there's no host to
@@ -47,24 +48,35 @@ function render() {
   page.classList.toggle("wide", currentView === "grid");
 }
 
-async function runSearch(query: string, view: ViewOption) {
+// How the tool phrases a weak/no match for the model. The demo has no
+// agent to speak that framing, so it says it in the status line instead —
+// otherwise a steer looks identical to a direct answer here, which is the
+// one thing this flow must never do.
+const QUALITY_NOTE: Record<string, string> = {
+  weak: "closest thing they use — not a direct answer",
+  none: "no pick for this — showing what they recommend most",
+};
+
+async function runSearch(question: string, view: ViewOption) {
   searchButton.disabled = true;
-  statusEl.textContent = "Searching…";
+  statusEl.textContent = "Looking…";
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&view=${view}`);
-    const data = (await res.json()) as SearchResponse;
+    const res = await fetch(`/api/recommend?q=${encodeURIComponent(question)}&view=${view}`);
+    const data = (await res.json()) as RecommendResponse;
     if (!res.ok) {
-      statusEl.textContent = data.error ?? "Search failed.";
+      statusEl.textContent = data.error ?? "Lookup failed.";
       return;
     }
-    currentVideos = data.videos ?? [];
+    currentProducts = data.products ?? [];
     currentView = data.view ?? "carousel";
-    statusEl.textContent = currentVideos.length
-      ? `${currentVideos.length} video${currentVideos.length === 1 ? "" : "s"} for "${data.query}" — ${currentView} view`
-      : `No videos found for "${data.query}".`;
+    const note = data.matchQuality ? QUALITY_NOTE[data.matchQuality] : undefined;
+    statusEl.textContent = currentProducts.length
+      ? `${currentProducts.length} for "${data.question}" — ${currentView} view` +
+        (note ? ` · ${note}` : "")
+      : `Nothing to recommend for "${data.question}".`;
     render();
   } catch {
-    statusEl.textContent = "Search failed. Please try again.";
+    statusEl.textContent = "Lookup failed. Please try again.";
   } finally {
     searchButton.disabled = false;
   }
@@ -72,17 +84,17 @@ async function runSearch(query: string, view: ViewOption) {
 
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const query = searchInput.value.trim();
-  if (!query) return;
-  void runSearch(query, viewSelect.value as ViewOption);
+  const question = searchInput.value.trim();
+  if (!question) return;
+  void runSearch(question, viewSelect.value as ViewOption);
 });
 
-// Re-run the last search with the new view, so switching the dropdown
-// alone is enough to compare layouts without retyping the query.
+// Re-run the last question with the new view, so switching the dropdown
+// alone is enough to compare layouts without retyping it.
 viewSelect.addEventListener("change", () => {
-  const query = searchInput.value.trim();
-  if (!query || currentVideos.length === 0) return;
-  void runSearch(query, viewSelect.value as ViewOption);
+  const question = searchInput.value.trim();
+  if (!question || currentProducts.length === 0) return;
+  void runSearch(question, viewSelect.value as ViewOption);
 });
 
 render();

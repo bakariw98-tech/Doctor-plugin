@@ -1,11 +1,12 @@
 // src/db.ts
-// Postgres client for the lead-capture feature (offer_lead_magnet /
-// submit_lead in src/mcp-server.ts, and the /admin dashboard in
-// src/admin.ts). Everything here goes through a real database rather than
-// process memory, because api/mcp.ts and api/admin.ts are stateless
-// Vercel serverless functions — a fresh process per request, nothing
-// survives between the "show form" call and the "submit form" call
-// except what's actually persisted.
+// Postgres client for the product catalog (recommend_product /
+// list_recommendations in src/mcp-server.ts, the /admin dashboard in
+// src/admin.ts, and the click redirect in api/redirect.ts). Everything
+// goes through a real database rather than process memory, because
+// api/mcp.ts, api/admin.ts and api/redirect.ts are stateless Vercel
+// serverless functions — a fresh process per request, nothing survives
+// between the call that recommends a product and the click that follows
+// it except what's actually persisted.
 //
 // Uses the plain `postgres` driver (porsager/postgres) against a Supabase
 // project's connection string — Supabase, not Vercel's own Postgres/Neon
@@ -18,13 +19,15 @@
 // once outside this repo; see .env.example and README.md. This module
 // creates the tables inside that database, not the database itself.
 //
-// DEMO_MODE=1 (see isDemoMode below) skips the database entirely and
-// keeps everything in an in-process Map instead — for trying out the
-// offer/form UI itself before a real database is wired up. Deliberately
-// opt-in (an explicit env var, not just "DATABASE_URL happens to be
-// unset") so a genuinely misconfigured deployment fails loudly instead of
-// silently pretending to collect leads it's actually throwing away every
-// cold start.
+// Unlike the lead capture this replaced, the catalog is not optional —
+// with no products there is nothing to recommend, so DATABASE_URL is now
+// required for the app's core function rather than just one feature.
+// DEMO_MODE=1 (see isDemoMode below) still skips the database entirely
+// and keeps everything in an in-process Map, for trying the flow out
+// before a real database is wired up. Deliberately opt-in (an explicit
+// env var, not just "DATABASE_URL happens to be unset") so a genuinely
+// misconfigured deployment fails loudly instead of silently serving an
+// empty catalog and losing every click it should have counted.
 import postgres from "postgres";
 
 function isDemoMode(): boolean {
@@ -36,8 +39,8 @@ function requireConnectionString(): string {
   if (!url) {
     throw new Error(
       "Set DATABASE_URL in the environment — create a Supabase project (supabase.com) and copy its " +
-        "connection string first (see .env.example) — or set DEMO_MODE=1 to try the UI without a " +
-        "database (leads won't be saved anywhere real; see the file header of src/db.ts).",
+        "connection string first (see .env.example) — or set DEMO_MODE=1 to try the flow without a " +
+        "database (nothing is saved anywhere real; see the file header of src/db.ts).",
     );
   }
   return url;
@@ -72,122 +75,121 @@ function sql() {
   return sqlClient;
 }
 
-export interface MagnetConfig {
+// ── Types ────────────────────────────────────────────────────────────────
+
+export interface Product {
+  id: number;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  /** The creator's own words on why they use it. Never model-generated. */
+  blurb: string;
+  /** Who it's for, in the creator's words. */
+  audience: string | null;
+  /** Extra free-text match terms that don't belong in the visible copy. */
+  keywords: string;
+  buyUrl: string;
+  imageUrl: string | null;
+  /** Display-only, e.g. "~$180". Never scraped, never authoritative. */
+  priceNote: string | null;
   enabled: boolean;
-  title: string;
-  description: string;
-  resourceUrl: string;
-  // Optional — a real image URL for the offer's cover art. Unset falls
-  // back to a generated icon-and-gradient treatment in the UI rather than
-  // a blank/broken image.
-  coverImageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface Question {
-  id: number;
-  fieldKey: string;
-  label: string;
-  required: boolean;
-  sortOrder: number;
-}
+export type MatchQuality = "strong" | "weak" | "none";
 
-export interface Lead {
+export interface ProductQuestion {
   id: number;
-  email: string;
-  name: string | null;
-  topic: string | null;
-  answers: Record<string, string>;
+  question: string;
+  productId: number | null;
+  matchQuality: MatchQuality;
   createdAt: string;
 }
 
-// Placeholder content until the creator sets real values via /admin — the
-// mechanism should work end to end before any real PDF exists.
-const DEFAULT_MAGNET: MagnetConfig = {
-  enabled: true,
-  title: "Free Guide",
-  description: "A free resource related to what you searched for.",
-  resourceUrl: "https://example.com/placeholder.pdf",
-  coverImageUrl: null,
-};
+export interface ProductInput {
+  name: string;
+  brand?: string | null;
+  category?: string | null;
+  blurb?: string;
+  audience?: string | null;
+  keywords?: string;
+  buyUrl: string;
+  imageUrl?: string | null;
+  priceNote?: string | null;
+  enabled?: boolean;
+}
 
-// ---- Demo mode: in-process store, no database at all -------------------
+// ── Demo-mode in-memory store ────────────────────────────────────────────
 
 interface MemoryStore {
-  config: MagnetConfig;
-  questions: Question[];
-  leads: Lead[];
+  products: Product[];
+  questions: ProductQuestion[];
+  clicks: { productId: number; questionId: number | null; createdAt: string }[];
+  nextProductId: number;
   nextQuestionId: number;
-  nextLeadId: number;
 }
 
-let memoryStore: MemoryStore | null = null;
+const globalStore = globalThis as unknown as { __catalogStore?: MemoryStore };
 
 function store(): MemoryStore {
-  if (!memoryStore) {
-    memoryStore = { config: { ...DEFAULT_MAGNET }, questions: [], leads: [], nextQuestionId: 1, nextLeadId: 1 };
+  if (!globalStore.__catalogStore) {
+    globalStore.__catalogStore = {
+      products: [],
+      questions: [],
+      clicks: [],
+      nextProductId: 1,
+      nextQuestionId: 1,
+    };
   }
-  return memoryStore;
+  return globalStore.__catalogStore;
 }
 
-// ---- Schema (real database only) ----------------------------------------
+// ── Schema ───────────────────────────────────────────────────────────────
 
-// Memoized per warm process so repeated calls in the same serverless
-// instance don't re-run CREATE TABLE IF NOT EXISTS every time — but a
-// fresh cold start (or the first call ever) always re-checks, so there's
-// no manual migration step required for correctness (npm run migrate
-// exists only as an optional manual convenience/connectivity check).
 let schemaReady: Promise<void> | null = null;
 
 async function ensureSchemaUncached(): Promise<void> {
   const db = sql();
-  // Root cause (confirmed from a real production error, code 42P18,
-  // routine pg_analyze_and_rewrite_varparams): a column's DEFAULT clause
-  // in CREATE TABLE is resolved at parse/analyze time, before a bound
-  // parameter's value even exists — so a runtime parameter can never work
-  // there, no cast fixes it, this isn't a pgbouncer quirk. The literal
-  // '' below is just a NOT NULL placeholder; the seed INSERT further down
-  // (ordinary DML, where parameters work fine) supplies the real values.
   await db`
-    CREATE TABLE IF NOT EXISTS lead_magnet_config (
-      id             SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-      enabled        BOOLEAN NOT NULL DEFAULT true,
-      title          TEXT NOT NULL DEFAULT '',
-      description    TEXT NOT NULL DEFAULT '',
-      resource_url   TEXT NOT NULL DEFAULT '',
-      cover_image_url TEXT,
-      updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS products (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL,
+      brand      TEXT,
+      category   TEXT,
+      blurb      TEXT NOT NULL DEFAULT '',
+      audience   TEXT,
+      keywords   TEXT NOT NULL DEFAULT '',
+      buy_url    TEXT NOT NULL,
+      image_url  TEXT,
+      price_note TEXT,
+      enabled    BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  // Older deployments may already have the table without this column.
-  await db`ALTER TABLE lead_magnet_config ADD COLUMN IF NOT EXISTS cover_image_url TEXT`;
-  await db`
-    INSERT INTO lead_magnet_config (id, title, description, resource_url)
-    VALUES (1, ${DEFAULT_MAGNET.title}::text, ${DEFAULT_MAGNET.description}::text, ${DEFAULT_MAGNET.resourceUrl}::text)
-    ON CONFLICT (id) DO NOTHING
-  `;
+  await db`CREATE INDEX IF NOT EXISTS products_enabled_idx ON products (enabled)`;
 
   await db`
-    CREATE TABLE IF NOT EXISTS lead_form_questions (
-      id         SERIAL PRIMARY KEY,
-      label      TEXT NOT NULL,
-      field_key  TEXT NOT NULL UNIQUE,
-      required   BOOLEAN NOT NULL DEFAULT false,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS product_questions (
+      id            SERIAL PRIMARY KEY,
+      question      TEXT NOT NULL,
+      product_id    INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      match_quality TEXT NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await db`CREATE INDEX IF NOT EXISTS product_questions_created_at_idx ON product_questions (created_at DESC)`;
 
   await db`
-    CREATE TABLE IF NOT EXISTS leads (
-      id         SERIAL PRIMARY KEY,
-      email      TEXT NOT NULL,
-      name       TEXT,
-      topic      TEXT,
-      answers    JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS product_clicks (
+      id          SERIAL PRIMARY KEY,
+      product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      question_id INTEGER REFERENCES product_questions(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  await db`CREATE INDEX IF NOT EXISTS leads_created_at_idx ON leads (created_at DESC)`;
+  await db`CREATE INDEX IF NOT EXISTS product_clicks_product_id_idx ON product_clicks (product_id)`;
 }
 
 export function ensureSchema(): Promise<void> {
@@ -203,163 +205,315 @@ export function ensureSchema(): Promise<void> {
   return schemaReady;
 }
 
-function toMagnetConfig(row: {
-  enabled: boolean;
-  title: string;
-  description: string;
-  resource_url: string;
-  cover_image_url: string | null;
-}): MagnetConfig {
+// ── Row mapping ──────────────────────────────────────────────────────────
+
+function toProduct(row: Record<string, unknown>): Product {
   return {
-    enabled: row.enabled,
-    title: row.title,
-    description: row.description,
-    resourceUrl: row.resource_url,
-    coverImageUrl: row.cover_image_url,
+    id: Number(row.id),
+    name: String(row.name),
+    brand: (row.brand as string | null) ?? null,
+    category: (row.category as string | null) ?? null,
+    blurb: String(row.blurb ?? ""),
+    audience: (row.audience as string | null) ?? null,
+    keywords: String(row.keywords ?? ""),
+    buyUrl: String(row.buy_url),
+    imageUrl: (row.image_url as string | null) ?? null,
+    priceNote: (row.price_note as string | null) ?? null,
+    enabled: Boolean(row.enabled),
+    createdAt: new Date(row.created_at as string).toISOString(),
+    updatedAt: new Date(row.updated_at as string).toISOString(),
   };
 }
 
-export async function getMagnetConfig(): Promise<MagnetConfig> {
-  if (isDemoMode()) return store().config;
-  await ensureSchema();
-  const rows = await sql()`
-    SELECT enabled, title, description, resource_url, cover_image_url FROM lead_magnet_config WHERE id = 1
-  `;
-  return rows[0] ? toMagnetConfig(rows[0] as never) : DEFAULT_MAGNET;
-}
+// ── Products ─────────────────────────────────────────────────────────────
 
-export async function updateMagnetConfig(input: Partial<MagnetConfig>): Promise<MagnetConfig> {
+export async function listProducts(opts: { enabledOnly?: boolean } = {}): Promise<Product[]> {
   if (isDemoMode()) {
-    store().config = { ...store().config, ...input };
-    return store().config;
+    const all = [...store().products].sort((a, b) => a.name.localeCompare(b.name));
+    return opts.enabledOnly ? all.filter((p) => p.enabled) : all;
   }
   await ensureSchema();
-  const current = await getMagnetConfig();
-  const next = { ...current, ...input };
-  const rows = await sql()`
-    UPDATE lead_magnet_config
-    SET enabled = ${next.enabled}::boolean, title = ${next.title}::text, description = ${next.description}::text,
-        resource_url = ${next.resourceUrl}::text, cover_image_url = ${next.coverImageUrl}::text, updated_at = now()
-    WHERE id = 1
-    RETURNING enabled, title, description, resource_url, cover_image_url
-  `;
-  return toMagnetConfig(rows[0] as never);
+  const db = sql();
+  const rows = opts.enabledOnly
+    ? await db`SELECT * FROM products WHERE enabled = true ORDER BY name ASC`
+    : await db`SELECT * FROM products ORDER BY name ASC`;
+  return rows.map((r) => toProduct(r as Record<string, unknown>));
 }
 
-function toQuestion(row: {
-  id: number;
-  field_key: string;
-  label: string;
-  required: boolean;
-  sort_order: number;
-}): Question {
-  return { id: row.id, fieldKey: row.field_key, label: row.label, required: row.required, sortOrder: row.sort_order };
-}
-
-export async function listQuestions(): Promise<Question[]> {
-  if (isDemoMode()) return [...store().questions].sort((a, b) => a.sortOrder - b.sortOrder);
+export async function getProduct(id: number): Promise<Product | null> {
+  if (isDemoMode()) return store().products.find((p) => p.id === id) ?? null;
   await ensureSchema();
-  const rows = await sql()`
-    SELECT id, field_key, label, required, sort_order FROM lead_form_questions ORDER BY sort_order, id
-  `;
-  return rows.map((r) => toQuestion(r as never));
+  const db = sql();
+  const rows = await db`SELECT * FROM products WHERE id = ${id}::integer`;
+  return rows.length ? toProduct(rows[0] as Record<string, unknown>) : null;
 }
 
-// Derives a stable, unique field_key from a label (e.g. "What's your
-// goal?" -> "whats_your_goal") — this is what ties a dynamically-added
-// question to its answer in leads.answers jsonb, independent of the
-// label's own text so renaming a question later doesn't disturb
-// historical leads recorded under the old key.
-function slugify(label: string): string {
-  const base = label
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return base || "question";
-}
-
-export async function addQuestion(input: { label: string; required: boolean }): Promise<Question> {
+export async function createProduct(input: ProductInput): Promise<Product> {
   if (isDemoMode()) {
     const s = store();
-    const base = slugify(input.label);
-    let fieldKey = base;
-    for (let suffix = 2; s.questions.some((q) => q.fieldKey === fieldKey); suffix++) {
-      fieldKey = `${base}_${suffix}`;
-    }
-    const question: Question = {
-      id: s.nextQuestionId++,
-      fieldKey,
-      label: input.label,
-      required: input.required,
-      sortOrder: s.questions.length,
+    const now = new Date().toISOString();
+    const product: Product = {
+      id: s.nextProductId++,
+      name: input.name,
+      brand: input.brand ?? null,
+      category: input.category ?? null,
+      blurb: input.blurb ?? "",
+      audience: input.audience ?? null,
+      keywords: input.keywords ?? "",
+      buyUrl: input.buyUrl,
+      imageUrl: input.imageUrl ?? null,
+      priceNote: input.priceNote ?? null,
+      enabled: input.enabled ?? true,
+      createdAt: now,
+      updatedAt: now,
     };
-    s.questions.push(question);
-    return question;
+    s.products.push(product);
+    return product;
+  }
+  await ensureSchema();
+  const db = sql();
+  const rows = await db`
+    INSERT INTO products (name, brand, category, blurb, audience, keywords, buy_url, image_url, price_note, enabled)
+    VALUES (
+      ${input.name}::text, ${input.brand ?? null}::text, ${input.category ?? null}::text,
+      ${input.blurb ?? ""}::text, ${input.audience ?? null}::text, ${input.keywords ?? ""}::text,
+      ${input.buyUrl}::text, ${input.imageUrl ?? null}::text, ${input.priceNote ?? null}::text,
+      ${input.enabled ?? true}::boolean
+    )
+    RETURNING *
+  `;
+  return toProduct(rows[0] as Record<string, unknown>);
+}
+
+export async function updateProduct(id: number, input: Partial<ProductInput>): Promise<Product | null> {
+  if (isDemoMode()) {
+    const existing = store().products.find((p) => p.id === id);
+    if (!existing) return null;
+    Object.assign(existing, {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.brand !== undefined ? { brand: input.brand } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.blurb !== undefined ? { blurb: input.blurb } : {}),
+      ...(input.audience !== undefined ? { audience: input.audience } : {}),
+      ...(input.keywords !== undefined ? { keywords: input.keywords } : {}),
+      ...(input.buyUrl !== undefined ? { buyUrl: input.buyUrl } : {}),
+      ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+      ...(input.priceNote !== undefined ? { priceNote: input.priceNote } : {}),
+      ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+      updatedAt: new Date().toISOString(),
+    });
+    return existing;
+  }
+  await ensureSchema();
+  const db = sql();
+  // COALESCE against an explicit null-typed parameter rather than building
+  // a dynamic SET list: keeps every value a plainly-cast bound parameter
+  // (see the fetch_types note above) instead of interpolated SQL.
+  const rows = await db`
+    UPDATE products SET
+      name       = COALESCE(${input.name ?? null}::text, name),
+      brand      = COALESCE(${input.brand ?? null}::text, brand),
+      category   = COALESCE(${input.category ?? null}::text, category),
+      blurb      = COALESCE(${input.blurb ?? null}::text, blurb),
+      audience   = COALESCE(${input.audience ?? null}::text, audience),
+      keywords   = COALESCE(${input.keywords ?? null}::text, keywords),
+      buy_url    = COALESCE(${input.buyUrl ?? null}::text, buy_url),
+      image_url  = COALESCE(${input.imageUrl ?? null}::text, image_url),
+      price_note = COALESCE(${input.priceNote ?? null}::text, price_note),
+      enabled    = COALESCE(${input.enabled ?? null}::boolean, enabled),
+      updated_at = now()
+    WHERE id = ${id}::integer
+    RETURNING *
+  `;
+  return rows.length ? toProduct(rows[0] as Record<string, unknown>) : null;
+}
+
+export async function deleteProduct(id: number): Promise<void> {
+  if (isDemoMode()) {
+    const s = store();
+    s.products = s.products.filter((p) => p.id !== id);
+    s.clicks = s.clicks.filter((c) => c.productId !== id);
+    return;
+  }
+  await ensureSchema();
+  await sql()`DELETE FROM products WHERE id = ${id}::integer`;
+}
+
+/**
+ * Bulk import from a pasted affiliate/Amazon/LTK list. Every row lands
+ * disabled with an empty blurb — an imported link is a stub, not yet
+ * something the creator has said anything about, and only enabled
+ * products are ever matched or recommended. That's what stops an
+ * unfinished import from producing a recommendation with no words behind it.
+ */
+export async function bulkCreateProducts(rows: { name: string; buyUrl: string; category?: string | null }[]): Promise<number> {
+  let created = 0;
+  for (const row of rows) {
+    await createProduct({ ...row, enabled: false, blurb: "" });
+    created += 1;
+  }
+  return created;
+}
+
+// ── Questions and clicks ─────────────────────────────────────────────────
+
+export async function logQuestion(input: {
+  question: string;
+  productId: number | null;
+  matchQuality: MatchQuality;
+}): Promise<number> {
+  if (isDemoMode()) {
+    const s = store();
+    const q: ProductQuestion = {
+      id: s.nextQuestionId++,
+      question: input.question,
+      productId: input.productId,
+      matchQuality: input.matchQuality,
+      createdAt: new Date().toISOString(),
+    };
+    s.questions.push(q);
+    return q.id;
+  }
+  await ensureSchema();
+  const db = sql();
+  const rows = await db`
+    INSERT INTO product_questions (question, product_id, match_quality)
+    VALUES (${input.question}::text, ${input.productId}::integer, ${input.matchQuality}::text)
+    RETURNING id
+  `;
+  return Number(rows[0].id);
+}
+
+export async function logClick(input: { productId: number; questionId: number | null }): Promise<void> {
+  if (isDemoMode()) {
+    store().clicks.push({ ...input, createdAt: new Date().toISOString() });
+    return;
+  }
+  await ensureSchema();
+  await sql()`
+    INSERT INTO product_clicks (product_id, question_id)
+    VALUES (${input.productId}::integer, ${input.questionId}::integer)
+  `;
+}
+
+// ── Aggregates for /admin ────────────────────────────────────────────────
+
+export interface QuestionCount { question: string; count: number }
+export interface ProductStat { id: number; name: string; questions: number; clicks: number }
+export interface Insights {
+  totalQuestions: number;
+  totalClicks: number;
+  answeredQuestions: number;
+  /**
+   * Distinct questions that led to at least one click — NOT the raw click
+   * count. "How many of those questions ended in a click" has to be a
+   * per-question figure: raw clicks counts someone tapping the same
+   * recommendation twice, and counts demo-page clicks that carry no
+   * question at all, both of which can push a naive clicks/questions rate
+   * over 100%.
+   */
+  questionsWithClick: number;
+  topQuestions: QuestionCount[];
+  gaps: QuestionCount[];
+  products: ProductStat[];
+}
+
+export async function getInsights(limit = 10): Promise<Insights> {
+  if (isDemoMode()) {
+    const s = store();
+    const tally = (qs: ProductQuestion[]): QuestionCount[] => {
+      const counts = new Map<string, number>();
+      for (const q of qs) {
+        const key = q.question.trim().toLowerCase();
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return [...counts.entries()]
+        .map(([question, count]) => ({ question, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+    };
+    return {
+      totalQuestions: s.questions.length,
+      totalClicks: s.clicks.length,
+      answeredQuestions: s.questions.filter((q) => q.matchQuality !== "none").length,
+      questionsWithClick: new Set(
+        s.clicks.map((c) => c.questionId).filter((id): id is number => id !== null),
+      ).size,
+      topQuestions: tally(s.questions),
+      gaps: tally(s.questions.filter((q) => q.matchQuality !== "strong")),
+      products: s.products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        questions: s.questions.filter((q) => q.productId === p.id).length,
+        clicks: s.clicks.filter((c) => c.productId === p.id).length,
+      })).sort((a, b) => b.clicks - a.clicks || b.questions - a.questions),
+    };
   }
 
   await ensureSchema();
   const db = sql();
-  const base = slugify(input.label);
-  let fieldKey = base;
-  for (let suffix = 2; ; suffix++) {
-    const existing = await db`SELECT 1 FROM lead_form_questions WHERE field_key = ${fieldKey}::text`;
-    if (existing.length === 0) break;
-    fieldKey = `${base}_${suffix}`;
-  }
-  const [{ next_order }] = (await db`
-    SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM lead_form_questions
-  `) as { next_order: number }[];
+  const [totals] = await db`
+    SELECT
+      count(*)::int AS total,
+      count(*) FILTER (WHERE match_quality <> 'none')::int AS answered
+    FROM product_questions
+  `;
+  const [clicks] = await db`
+    SELECT
+      count(*)::int AS total,
+      count(DISTINCT question_id)::int AS with_question
+    FROM product_clicks
+  `;
+  const topQuestions = await db`
+    SELECT lower(btrim(question)) AS question, count(*)::int AS count
+    FROM product_questions
+    GROUP BY 1 ORDER BY count DESC, question ASC LIMIT ${limit}::integer
+  `;
+  const gaps = await db`
+    SELECT lower(btrim(question)) AS question, count(*)::int AS count
+    FROM product_questions
+    WHERE match_quality <> 'strong'
+    GROUP BY 1 ORDER BY count DESC, question ASC LIMIT ${limit}::integer
+  `;
+  const products = await db`
+    SELECT p.id, p.name,
+      (SELECT count(*)::int FROM product_questions q WHERE q.product_id = p.id) AS questions,
+      (SELECT count(*)::int FROM product_clicks c WHERE c.product_id = p.id) AS clicks
+    FROM products p
+    ORDER BY clicks DESC, questions DESC, p.name ASC
+  `;
+  return {
+    totalQuestions: Number(totals.total),
+    totalClicks: Number(clicks.total),
+    answeredQuestions: Number(totals.answered),
+    questionsWithClick: Number(clicks.with_question),
+    topQuestions: topQuestions.map((r) => ({ question: String(r.question), count: Number(r.count) })),
+    gaps: gaps.map((r) => ({ question: String(r.question), count: Number(r.count) })),
+    products: products.map((r) => ({
+      id: Number(r.id), name: String(r.name),
+      questions: Number(r.questions), clicks: Number(r.clicks),
+    })),
+  };
+}
 
+/** Fallback ordering when nothing matched — the catalog's proven picks. */
+export async function mostClickedProducts(limit: number): Promise<Product[]> {
+  if (isDemoMode()) {
+    const s = store();
+    const clickCount = (id: number) => s.clicks.filter((c) => c.productId === id).length;
+    return s.products.filter((p) => p.enabled)
+      .sort((a, b) => clickCount(b.id) - clickCount(a.id))
+      .slice(0, limit);
+  }
+  await ensureSchema();
+  const db = sql();
   const rows = await db`
-    INSERT INTO lead_form_questions (label, field_key, required, sort_order)
-    VALUES (${input.label}::text, ${fieldKey}::text, ${input.required}::boolean, ${next_order}::integer)
-    RETURNING id, field_key, label, required, sort_order
+    SELECT p.* FROM products p
+    LEFT JOIN product_clicks c ON c.product_id = p.id
+    WHERE p.enabled = true
+    GROUP BY p.id
+    ORDER BY count(c.id) DESC, p.name ASC
+    LIMIT ${limit}::integer
   `;
-  return toQuestion(rows[0] as never);
-}
-
-export async function deleteQuestion(id: number): Promise<void> {
-  if (isDemoMode()) {
-    const s = store();
-    s.questions = s.questions.filter((q) => q.id !== id);
-    return;
-  }
-  await ensureSchema();
-  await sql()`DELETE FROM lead_form_questions WHERE id = ${id}::integer`;
-}
-
-export async function insertLead(input: {
-  email: string;
-  name: string | null;
-  topic: string | null;
-  answers: Record<string, string>;
-}): Promise<Lead> {
-  if (isDemoMode()) {
-    const s = store();
-    const lead: Lead = { id: s.nextLeadId++, ...input, createdAt: new Date().toISOString() };
-    s.leads.unshift(lead);
-    return lead;
-  }
-
-  await ensureSchema();
-  const rows = await sql()`
-    INSERT INTO leads (email, name, topic, answers)
-    VALUES (${input.email}::text, ${input.name}::text, ${input.topic}::text, ${JSON.stringify(input.answers)}::jsonb)
-    RETURNING id, email, name, topic, answers, created_at
-  `;
-  const row = rows[0] as { id: number; email: string; name: string | null; topic: string | null; answers: Record<string, string>; created_at: string };
-  return { id: row.id, email: row.email, name: row.name, topic: row.topic, answers: row.answers, createdAt: row.created_at };
-}
-
-export async function listLeads(): Promise<Lead[]> {
-  if (isDemoMode()) return store().leads;
-  await ensureSchema();
-  const rows = await sql()`
-    SELECT id, email, name, topic, answers, created_at FROM leads ORDER BY created_at DESC
-  `;
-  return rows.map((r) => {
-    const row = r as { id: number; email: string; name: string | null; topic: string | null; answers: Record<string, string>; created_at: string };
-    return { id: row.id, email: row.email, name: row.name, topic: row.topic, answers: row.answers, createdAt: row.created_at };
-  });
+  return rows.map((r) => toProduct(r as Record<string, unknown>));
 }
