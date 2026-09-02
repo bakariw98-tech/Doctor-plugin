@@ -44,6 +44,7 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
     if (p.blurb) parts.push(`Their words: "${p.blurb}"`);
     if (p.audience) parts.push(`Who it's for: ${p.audience}`);
     if (p.priceNote) parts.push(`Price note: ${p.priceNote}`);
+    if (p.promoCode) parts.push(`Promo code: ${p.promoCode}`);
     return `- ${parts.join(" — ")}`;
   }).join("\n");
 
@@ -56,8 +57,10 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
         `generally — say clearly that they don't have a pick for what was asked, then offer this ` +
         `as the nearest real thing rather than leaving them with nothing:`;
 
-  return `${header}\n${lines}\n\nThe widget already shows the name, their line, and a Get it ` +
-    `button — don't repeat all of it back in prose.`;
+  return `${header}\n${lines}\n\nThe widget only shows the product's name, photo, price, and a ` +
+    `Get it button — not their words or who it's for. Those two live here, in your reply, and ` +
+    `nowhere else: say them yourself (\"this is what she said about it...\"). If there's a promo ` +
+    `code, mention it too — the widget shows it as a small code chip, but say it aloud as well.`;
 }
 
 export function createMcpServer(): McpServer {
@@ -88,8 +91,10 @@ export function createMcpServer(): McpServer {
         "confident recommendation, and equally don't just say 'I don't know' and stop: steer them " +
         "to something real ('he doesn't have a pan he recommends, but he does swear by this knife " +
         "for prep').\n" +
-        "- The widget draws the product name, the creator's line, and a Get it button. Keep your " +
-        "own reply short — a sentence of framing, not a recital of the card.\n" +
+        "- The widget only draws the product's photo, name, price, and a Get it button — it does " +
+        "NOT show the blurb or who it's for. Those two are yours to say out loud, in your own " +
+        "reply, or the person never hears them at all. A promo code (if there is one) shows as a " +
+        "small chip on the card, but say it too rather than assuming they'll spot it.\n" +
         "- There is no email signup, no free guide, and nothing to collect from the person. The " +
         "recommendation and the buy link are the whole answer.",
       inputSchema: {
@@ -192,8 +197,8 @@ export function createMcpServer(): McpServer {
             : "There's nothing in the catalog yet — say so rather than suggesting products from " +
               "general knowledge.")
           : `${products.length} recommendation${products.length === 1 ? "" : "s"}` +
-            `${wanted ? ` under "${category}"` : ""}. Each card carries the creator's own line ` +
-            `about it and a Get it button, so keep your reply brief:\n` +
+            `${wanted ? ` under "${category}"` : ""}. The cards only show photo, name, price, ` +
+            `and Get it — say each one's line yourself from the list below:\n` +
             products.map((p) => `- ${p.name}${p.brand ? ` (${p.brand})` : ""}` +
               `${p.blurb ? ` — "${p.blurb}"` : ""}`).join("\n");
 

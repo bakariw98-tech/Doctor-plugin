@@ -159,6 +159,7 @@
         overflow: hidden;
       }
       .pcard-compact .pcard-price { margin-top: 3px; font-size: 11.5px; }
+      .pcard-compact .pcard-promo { margin-top: 3px; }
       .pcard-compact:hover { transform: translateY(-2px); box-shadow: var(--lift); }
       .pcard-compact:focus-visible {
         outline: none;
@@ -167,27 +168,14 @@
 
       /* Detail: an article containing exactly one button. Deliberately NOT
          clickable as a whole — a button inside a button is invalid and
-         breaks keyboard traversal. */
+         breaks keyboard traversal. No blurb/brand/audience here — those
+         are prose, and prose is the agent's job (src/product-card.ts). */
       .pcard-detail .pcard-img { aspect-ratio: 4 / 3; }
       .pcard-detail .pcard-body { padding: 14px 16px 16px; }
-      .pcard-brand {
-        margin: 0 0 3px; font-size: 11px; font-weight: 700;
-        letter-spacing: 0.06em; text-transform: uppercase;
-        color: var(--text); opacity: 0.5;
-      }
       .pcard-detail .pcard-name { font-size: 17px; letter-spacing: -0.01em; }
-      /* The creator's own words. Full weight and full opacity on purpose:
-         this is the substance of the recommendation, not supporting
-         chrome, and it should not read as a caption. */
-      .pcard-blurb {
-        margin: 9px 0 0; font-size: 14px; line-height: 1.5; color: var(--text);
-      }
-      .pcard-for {
-        margin: 7px 0 0; font-size: 13px; line-height: 1.45;
-        color: var(--text); opacity: 0.62;
-      }
       .pcard-actions {
-        display: flex; align-items: center; gap: 12px; margin-top: 14px;
+        display: flex; align-items: center; gap: 10px; margin-top: 14px;
+        flex-wrap: wrap;
       }
       .pcard-buy {
         font: inherit; font-size: 14px; font-weight: 650; color: #fff;
@@ -198,6 +186,12 @@
       .pcard-buy:focus-visible {
         outline: none;
         box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--ring);
+      }
+      .pcard-promo {
+        display: inline-block; font-size: 11.5px; font-weight: 700;
+        letter-spacing: 0.02em; color: var(--ring);
+        border: 1px dashed var(--ring); border-radius: 5px;
+        padding: 2px 7px; font-variant-numeric: tabular-nums;
       }
 
       .empty { font-size: 13px; color: var(--text); opacity: 0.6; }

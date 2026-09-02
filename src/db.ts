@@ -92,6 +92,8 @@ export interface Product {
   imageUrl: string | null;
   /** Display-only, e.g. "~$180". Never scraped, never authoritative. */
   priceNote: string | null;
+  /** Optional promo/discount code shown with the buy button. */
+  promoCode: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -117,6 +119,7 @@ export interface ProductInput {
   buyUrl: string;
   imageUrl?: string | null;
   priceNote?: string | null;
+  promoCode?: string | null;
   enabled?: boolean;
 }
 
@@ -163,11 +166,14 @@ async function ensureSchemaUncached(): Promise<void> {
       buy_url    TEXT NOT NULL,
       image_url  TEXT,
       price_note TEXT,
+      promo_code TEXT,
       enabled    BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Older deployments already have the table without this column.
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_code TEXT`;
   await db`CREATE INDEX IF NOT EXISTS products_enabled_idx ON products (enabled)`;
 
   await db`
@@ -219,6 +225,7 @@ function toProduct(row: Record<string, unknown>): Product {
     buyUrl: String(row.buy_url),
     imageUrl: (row.image_url as string | null) ?? null,
     priceNote: (row.price_note as string | null) ?? null,
+    promoCode: (row.promo_code as string | null) ?? null,
     enabled: Boolean(row.enabled),
     createdAt: new Date(row.created_at as string).toISOString(),
     updatedAt: new Date(row.updated_at as string).toISOString(),
@@ -263,6 +270,7 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       buyUrl: input.buyUrl,
       imageUrl: input.imageUrl ?? null,
       priceNote: input.priceNote ?? null,
+      promoCode: input.promoCode ?? null,
       enabled: input.enabled ?? true,
       createdAt: now,
       updatedAt: now,
@@ -273,12 +281,12 @@ export async function createProduct(input: ProductInput): Promise<Product> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO products (name, brand, category, blurb, audience, keywords, buy_url, image_url, price_note, enabled)
+    INSERT INTO products (name, brand, category, blurb, audience, keywords, buy_url, image_url, price_note, promo_code, enabled)
     VALUES (
       ${input.name}::text, ${input.brand ?? null}::text, ${input.category ?? null}::text,
       ${input.blurb ?? ""}::text, ${input.audience ?? null}::text, ${input.keywords ?? ""}::text,
       ${input.buyUrl}::text, ${input.imageUrl ?? null}::text, ${input.priceNote ?? null}::text,
-      ${input.enabled ?? true}::boolean
+      ${input.promoCode ?? null}::text, ${input.enabled ?? true}::boolean
     )
     RETURNING *
   `;
@@ -299,6 +307,7 @@ export async function updateProduct(id: number, input: Partial<ProductInput>): P
       ...(input.buyUrl !== undefined ? { buyUrl: input.buyUrl } : {}),
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
       ...(input.priceNote !== undefined ? { priceNote: input.priceNote } : {}),
+      ...(input.promoCode !== undefined ? { promoCode: input.promoCode } : {}),
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       updatedAt: new Date().toISOString(),
     });
@@ -320,6 +329,7 @@ export async function updateProduct(id: number, input: Partial<ProductInput>): P
       buy_url    = COALESCE(${input.buyUrl ?? null}::text, buy_url),
       image_url  = COALESCE(${input.imageUrl ?? null}::text, image_url),
       price_note = COALESCE(${input.priceNote ?? null}::text, price_note),
+      promo_code = COALESCE(${input.promoCode ?? null}::text, promo_code),
       enabled    = COALESCE(${input.enabled ?? null}::boolean, enabled),
       updated_at = now()
     WHERE id = ${id}::integer

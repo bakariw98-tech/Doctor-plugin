@@ -31,18 +31,20 @@ function trackedBuyUrl(productId: number, questionId: number | null): string {
   return `${siteOrigin()}/r/${productId}${suffix}`;
 }
 
-// What the widget draws. Deliberately not the whole DB row: `keywords` is
-// match-only fuel the creator never meant to be read aloud, and `enabled`
-// is bookkeeping.
+// What the widget draws — deliberately just enough to identify the product
+// and complete the purchase. Everything else (blurb, audience, brand,
+// category — the "why", not the "what") stays out of this payload on
+// purpose: it already reaches the model as prose in the tool's `content`
+// text (buildResultText, mcp-server.ts), which is where it's meant to be
+// spoken from, not printed a second time on the card. `keywords` is
+// match-only fuel the creator never meant to be read anywhere, and
+// `enabled` is bookkeeping — neither ever belonged here.
 export interface WirePick {
   id: number;
   name: string;
-  brand: string | null;
-  category: string | null;
-  blurb: string;
-  audience: string | null;
   imageUrl: string | null;
   priceNote: string | null;
+  promoCode: string | null;
   buyUrl: string;
 }
 
@@ -50,12 +52,9 @@ export function toWire(product: Product, questionId: number | null): WirePick {
   return {
     id: product.id,
     name: product.name,
-    brand: product.brand,
-    category: product.category,
-    blurb: product.blurb,
-    audience: product.audience,
     imageUrl: product.imageUrl,
     priceNote: product.priceNote,
+    promoCode: product.promoCode,
     buyUrl: trackedBuyUrl(product.id, questionId),
   };
 }

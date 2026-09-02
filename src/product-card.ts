@@ -12,20 +12,24 @@
 // someone about to spend money needs the product's name and the buy
 // affordance at the point of the tap, not scrolled up in a paragraph, and
 // no sentence substitutes for a button. See design/README.md.
+//
+// What the card does NOT carry: the creator's blurb and who-it's-for line.
+// Those are prose, and prose belongs in the agent's reply, not printed a
+// second time in the widget — the model already receives both in the
+// tool's text content (buildResultText, src/mcp-server.ts) and is
+// instructed to speak them ("this is what she said about this"). The card
+// stays to the parts a purchase actually needs at the point of the tap:
+// what it is, what it costs, any promo code, and the button.
 
 import type { ViewMode } from "./view.js";
 
-/** What the server sends per product. Mirrors WirePick in mcp-server.ts. */
+/** What the server sends per product. Mirrors WirePick in src/recommend.ts. */
 export interface ProductPick {
   id: number;
   name: string;
-  brand: string | null;
-  category: string | null;
-  /** The creator's own words. Rendered as theirs — never paraphrased. */
-  blurb: string;
-  audience: string | null;
   imageUrl: string | null;
   priceNote: string | null;
+  promoCode: string | null;
   /** Already a tracked /r/<id> redirect by the time it reaches here. */
   buyUrl: string;
 }
@@ -56,17 +60,23 @@ function priceMarkup(product: ProductPick): string {
   return product.priceNote ? `<span class="pcard-price">${escapeHtml(product.priceNote)}</span>` : "";
 }
 
+function promoMarkup(product: ProductPick): string {
+  return product.promoCode
+    ? `<span class="pcard-promo">Code&nbsp;${escapeHtml(product.promoCode)}</span>`
+    : "";
+}
+
 /**
- * One product, at one of two densities.
+ * One product, at one of two densities. Neither carries the creator's
+ * blurb or who-it's-for line — see the file header.
  *
- * `detail` (the card/spotlight layouts) draws the full pick: photo, name,
- * the creator's line, who it's for, and a Get it button. The card itself
- * is NOT clickable — it's an <article> containing exactly one button,
- * because a button inside a button is invalid and breaks keyboard
- * traversal.
+ * `detail` (the card/spotlight layouts) draws photo, name, price, promo
+ * code, and a Get it button. The card itself is NOT clickable — it's an
+ * <article> containing exactly one button, because a button inside a
+ * button is invalid and breaks keyboard traversal.
  *
- * Compact (carousel/grid) has no room for prose, so the whole tile becomes
- * the button and the copy drops away to photo + name + price.
+ * Compact (carousel/grid) is smaller still: the whole tile becomes the
+ * button, with photo + name + price + promo code.
  */
 export function renderProductCard(
   product: ProductPick,
@@ -83,6 +93,7 @@ export function renderProductCard(
       <span class="pcard-body">
         <span class="pcard-name">${escapeHtml(product.name)}</span>
         ${priceMarkup(product)}
+        ${promoMarkup(product)}
       </span>`;
     tile.addEventListener("click", () => onOpen(product.buyUrl));
     return tile;
@@ -93,13 +104,11 @@ export function renderProductCard(
   card.innerHTML = `
     <div class="pcard-img">${imageMarkup(product)}</div>
     <div class="pcard-body">
-      ${product.brand ? `<p class="pcard-brand">${escapeHtml(product.brand)}</p>` : ""}
       <h2 class="pcard-name">${escapeHtml(product.name)}</h2>
-      ${product.blurb ? `<p class="pcard-blurb">${escapeHtml(product.blurb)}</p>` : ""}
-      ${product.audience ? `<p class="pcard-for">${escapeHtml(product.audience)}</p>` : ""}
       <div class="pcard-actions">
         <button type="button" class="pcard-buy">Get it</button>
         ${priceMarkup(product)}
+        ${promoMarkup(product)}
       </div>
     </div>`;
   card.querySelector<HTMLButtonElement>(".pcard-buy")!

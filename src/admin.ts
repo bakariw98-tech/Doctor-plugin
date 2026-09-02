@@ -267,12 +267,13 @@ function productForm(product: Product | null): string {
       <label><span>Why you use it — in your words</span>
         <textarea name="blurb" rows="3" style="font:inherit;width:100%;max-width:420px;padding:7px 9px;border:1px solid #d8d3cc;border-radius:6px;box-sizing:border-box"
           placeholder="It's the one knife I reach for every day. Holds an edge and doesn't feel heavy.">${escapeHtml(product?.blurb ?? "")}</textarea>
-        <small style="color:#6b665f">Shown on the card exactly as written. Nothing is generated for you.</small>
+        <small style="color:#6b665f">Not shown on the card — spoken by the plugin instead, in your words. Nothing is generated for you.</small>
       </label>
       ${field("Who it's for", "audience", product?.audience ?? null, { placeholder: "Anyone cooking most nights" })}
       ${field("Match keywords", "keywords", product?.keywords ?? null, { placeholder: "chopping prep everyday cooking", hint: "Never shown. Extra words that should find this product." })}
       ${field("Buy link", "buyUrl", product?.buyUrl ?? null, { type: "url", placeholder: "https://…", hint: "Your affiliate link. Clicks route through /r/ so they can be counted." })}
       ${field("Price note", "priceNote", product?.priceNote ?? null, { placeholder: "~$180", hint: "Display only — never checked against the retailer." })}
+      ${field("Promo code", "promoCode", product?.promoCode ?? null, { placeholder: "MISS10", hint: "Shown as a small chip on the card, and spoken by the plugin." })}
       <label><span>Photo</span><input type="file" name="imageFile" accept="image/*" /></label>
       ${field("…or paste an image URL", "imageUrl", product?.imageUrl ?? null, { type: "url", hint: "Uploads are safer: pasted URLs only render if that host is on the widget's CSP allowlist." })}
       <div class="checkbox-row">
@@ -490,6 +491,7 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
       audience: req.body.audience?.trim() || null,
       keywords: req.body.keywords?.trim() ?? "",
       priceNote: req.body.priceNote?.trim() || null,
+      promoCode: req.body.promoCode?.trim() || null,
       enabled: req.body.enabled === "on",
       ...(imageUrl !== undefined ? { imageUrl } : {}),
     };
