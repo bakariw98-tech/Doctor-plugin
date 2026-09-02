@@ -107,7 +107,7 @@
          a 16:9 video still was — `cover` here cuts the product in half. */
       .pcard-img {
         display: flex; align-items: center; justify-content: center;
-        aspect-ratio: 1 / 1; background: var(--shade); overflow: hidden;
+        aspect-ratio: 16 / 9; background: #ffffff; overflow: hidden;
       }
       .pcard-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
       .pcard-noimg { color: var(--text); opacity: 0.28; }
@@ -144,7 +144,6 @@
          clickable as a whole — a button inside a button is invalid and
          breaks keyboard traversal. No blurb/brand/audience here — those
          are prose, and prose is the agent's job (src/product-card.ts). */
-      .pcard-detail .pcard-img { aspect-ratio: 4 / 3; }
       .pcard-detail .pcard-body { padding: 14px 16px 16px; }
       .pcard-detail .pcard-name { font-size: 17px; letter-spacing: -0.01em; }
       .pcard-actions {
