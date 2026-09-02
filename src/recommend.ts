@@ -25,15 +25,30 @@ const MATCH_FLOOR = 0.25;
 
 // Where the click-tracking redirect lives. Buy links handed to the widget
 // point here rather than straight at the merchant, so a click can be
-// counted against the question that produced it (api/redirect.ts). Falls
-// back to a relative path when the deployment URL isn't known — the widget
-// resolves it against the host page, and a click that can't be attributed
-// is still better than a link that doesn't work.
+// counted against the question that produced it (api/redirect.ts).
+//
+// A relative path used to be an acceptable fallback: the widget resolves it
+// against the host page, so it degraded gracefully in that one context. It
+// no longer is — the same URL now also goes out in the tool's plain text
+// (buildResultText, src/mcp-server.ts) for hosts that don't render the
+// widget at all, and a relative path handed to someone in a chat reply
+// isn't a link, it's dead text with nothing to resolve it against. Vercel
+// always provides VERCEL_URL, and local dev (server.ts) sets a default
+// PUBLIC_BASE_URL of its own before this is ever called — so reaching this
+// throw means a genuinely different deployment target forgot to set it,
+// which is exactly the case that must fail loudly at request time rather
+// than silently ship broken buy links to real chat clients.
 function siteOrigin(): string {
   const explicit = process.env.PUBLIC_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/+$/, "");
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
-  return vercel ? `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}` : "";
+  if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  throw new Error(
+    "Could not determine this deployment's public URL (checked PUBLIC_BASE_URL, " +
+      "VERCEL_PROJECT_PRODUCTION_URL, VERCEL_URL). Buy links would be relative and broken for " +
+      "anyone using the plugin from a real chat client. Set PUBLIC_BASE_URL to this " +
+      "deployment's public origin, e.g. https://your-app.example.com.",
+  );
 }
 
 export function trackedBuyUrl(productId: number, questionId: number | null): string {

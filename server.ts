@@ -17,6 +17,15 @@ import { pickProducts, toWire } from "./src/recommend.js";
 import { resolveView, type ViewOption } from "./src/view.js";
 import { handleAdminRequest, type AdminRequest, type UploadedFile } from "./src/admin.js";
 
+// Local dev is the one deployment target that isn't Vercel, so it's the one
+// place src/recommend.ts's siteOrigin() can't fall back to VERCEL_URL. Set a
+// default here rather than leaving it unset: siteOrigin() now throws instead
+// of silently degrading to relative /r/<id> links when neither this nor
+// VERCEL_URL is present, so any *other* non-Vercel deployment target is
+// forced to set PUBLIC_BASE_URL explicitly rather than shipping broken buy
+// links to real chat clients with no error anywhere.
+process.env.PUBLIC_BASE_URL ??= `http://localhost:${process.env.PORT ?? 3001}`;
+
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // matches api/admin.ts — Vercel's request body cap, per file
 
 // express.urlencoded()/json() below only consume bodies whose Content-Type
