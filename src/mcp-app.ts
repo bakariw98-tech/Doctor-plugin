@@ -31,7 +31,7 @@ const app = new App({ name: "Creator Picks", version: "1.0.0" });
 void app.connect();
 
 let currentProducts: ProductPick[] = [];
-let currentView: ViewMode = "carousel";
+let currentView: ViewMode = "list";
 // Only true once we've actually switched to the fullscreen-only "grid"
 // layout via requestDisplayMode — lets us tell "grid because we asked for
 // fullscreen" apart from "grid because the tool forced it directly".
@@ -39,7 +39,7 @@ let inFullscreen = false;
 
 // Fullscreen is a request, not a guarantee — only offer it when the host
 // says it's actually available, and only when there's enough to browse to
-// make it worthwhile (a handful already fit the carousel fine).
+// make it worthwhile (a handful already fit the inline list fine).
 const FULLSCREEN_THRESHOLD = 8;
 
 function supportsFullscreen(): boolean {
@@ -50,7 +50,7 @@ function updateFullscreenBar() {
   if (inFullscreen) {
     fullscreenBar.hidden = false;
     fullscreenToggle.textContent = "Done";
-  } else if (currentView === "carousel" && currentProducts.length > FULLSCREEN_THRESHOLD && supportsFullscreen()) {
+  } else if (currentView === "list" && currentProducts.length > FULLSCREEN_THRESHOLD && supportsFullscreen()) {
     fullscreenBar.hidden = false;
     fullscreenToggle.textContent = `View all ${currentProducts.length} ⤢`;
   } else {
@@ -68,7 +68,7 @@ function render() {
 function applyPayload(payload: ProductPayload | undefined) {
   if (!payload) return;
   currentProducts = payload.products ?? [];
-  currentView = payload.view ?? "carousel";
+  currentView = payload.view ?? "list";
   // Visually silent — the agent's own reply carries the words. This is
   // only for screen readers, which have no other way to know the result
   // loaded (there's no visible status line to announce it for them).

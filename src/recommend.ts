@@ -31,20 +31,29 @@ function trackedBuyUrl(productId: number, questionId: number | null): string {
   return `${siteOrigin()}/r/${productId}${suffix}`;
 }
 
-// What the widget draws — deliberately just enough to identify the product
-// and complete the purchase. Everything else (blurb, audience, brand,
-// category — the "why", not the "what") stays out of this payload on
-// purpose: it already reaches the model as prose in the tool's `content`
-// text (buildResultText, mcp-server.ts), which is where it's meant to be
-// spoken from, not printed a second time on the card. `keywords` is
-// match-only fuel the creator never meant to be read anywhere, and
-// `enabled` is bookkeeping — neither ever belonged here.
+// What the widget draws — deliberately just enough to identify the product,
+// complete the purchase, and (in the list density) tell one row from the
+// next. `audience`, `brand`, `category` and `problem` stay out: they are the
+// "why" and the "who", and they already reach the model as prose in the
+// tool's `content` text (buildResultText, mcp-server.ts), which is where
+// they're meant to be spoken from rather than printed on the card.
+// `keywords` is match-only fuel the creator never meant to be read anywhere,
+// and `enabled` is bookkeeping — neither ever belonged here.
 export interface WirePick {
   id: number;
   name: string;
   imageUrl: string | null;
   priceNote: string | null;
   promoCode: string | null;
+  /**
+   * The one-liner. Drawn ONLY in the list density, where four-to-six results
+   * can't have their reasons narrated in a short chat reply without becoming
+   * the wall of text the whole interaction is trying to avoid. The single
+   * detail card still doesn't draw it — there, the model says it once.
+   */
+  blurb: string;
+  /** Rendered as the card's collapsed "how I use it". Absent when unset. */
+  usage: string | null;
   buyUrl: string;
 }
 
@@ -55,6 +64,8 @@ export function toWire(product: Product, questionId: number | null): WirePick {
     imageUrl: product.imageUrl,
     priceNote: product.priceNote,
     promoCode: product.promoCode,
+    blurb: product.blurb,
+    usage: product.usage,
     buyUrl: trackedBuyUrl(product.id, questionId),
   };
 }
@@ -66,7 +77,12 @@ export function toWire(product: Product, questionId: number | null): WirePick {
 function buildCorpus(products: Product[]): Record<string, string> {
   const corpus: Record<string, string> = {};
   for (const p of products) {
-    corpus[String(p.id)] = [p.name, p.brand, p.category, p.blurb, p.audience, p.keywords]
+    // `problem` and `usage` are what make a goal-shaped question ("trying to
+    // get into cooking more") land on anything: without them the corpus is
+    // all product nouns, and a question phrased as a need has nothing to
+    // match. This raises recall on those; it does not make the matching
+    // semantic — a miss still falls through to the weak/none steer.
+    corpus[String(p.id)] = [p.name, p.brand, p.category, p.blurb, p.audience, p.problem, p.usage, p.keywords]
       .filter(Boolean)
       .join(" ");
   }

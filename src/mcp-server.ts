@@ -43,6 +43,8 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
     const parts = [`${p.name}${p.brand ? ` (${p.brand})` : ""}`];
     if (p.blurb) parts.push(`Their words: "${p.blurb}"`);
     if (p.audience) parts.push(`Who it's for: ${p.audience}`);
+    if (p.problem) parts.push(`What it solves: ${p.problem}`);
+    if (p.usage) parts.push(`How they use it: ${p.usage}`);
     if (p.priceNote) parts.push(`Price note: ${p.priceNote}`);
     if (p.promoCode) parts.push(`Promo code: ${p.promoCode}`);
     return `- ${parts.join(" — ")}`;
@@ -57,10 +59,15 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
         `generally — say clearly that they don't have a pick for what was asked, then offer this ` +
         `as the nearest real thing rather than leaving them with nothing:`;
 
-  return `${header}\n${lines}\n\nThe widget only shows the product's name, photo, price, and a ` +
-    `Get it button — not their words or who it's for. Those two live here, in your reply, and ` +
-    `nowhere else: say them yourself (\"this is what she said about it...\"). If there's a promo ` +
-    `code, mention it too — the widget shows it as a small code chip, but say it aloud as well.`;
+  const single = products.length === 1;
+  return `${header}\n${lines}\n\n` +
+    (single
+      ? `The card shows the photo, name, price and a Get it button — not their words. Say the ` +
+        `reason yourself, in their voice, in a sentence or two. "How they use it" is already on ` +
+        `the card behind a tap, so only mention it if it answers what was actually asked.`
+      : `Each row already carries its own one-liner, so do NOT repeat them back one by one — one ` +
+        `short line framing the set is enough.`) +
+    ` If there's a promo code, say it aloud as well as it being on the card.`;
 }
 
 export function createMcpServer(): McpServer {
@@ -82,19 +89,29 @@ export function createMcpServer(): McpServer {
         "Pass the person's question as they actually asked it. Don't reduce it to a keyword: the " +
         "raw phrasing is what the creator's gap report is built from, and it's how they learn what " +
         "their audience wants that they don't yet recommend.\n\n" +
+        "Use it for goal-shaped questions too, not just product ones — \"I'm trying to get into " +
+        "cooking more, what should I get\" is this tool with mode 'few', matched against what each " +
+        "product solves. (Browsing a whole category with no particular need — \"what does she " +
+        "recommend for the kitchen\" — is list_recommendations instead.)\n\n" +
         "How to speak the result:\n" +
-        "- The blurb in the response is the CREATOR'S own words about why they use it. Present it " +
-        "as theirs, not as your own assessment.\n" +
+        "- Answer the way the CREATOR would answer, in their cadence. The person asking already " +
+        "trusts this creator's taste — they came for the answer, not to be sold. It should read " +
+        "like a text back from someone they follow, not a database summary or a product review.\n" +
+        "- Keep it short. One or two lines, then stop. No spec sheets, no 'five things to consider " +
+        "before buying a knife', no comparison tables nobody asked for.\n" +
+        "- The blurb and the how-they-use-it in the response are the CREATOR'S own words. Present " +
+        "them as theirs, not as your own assessment.\n" +
         "- Never invent a product, a reason, a price, or a spec that isn't in the response. If " +
         "someone asks about something the catalog doesn't cover, the response will say so — pass " +
         "that on honestly and offer what's there instead. Don't stretch a weak match into a " +
         "confident recommendation, and equally don't just say 'I don't know' and stop: steer them " +
         "to something real ('he doesn't have a pan he recommends, but he does swear by this knife " +
         "for prep').\n" +
-        "- The widget only draws the product's photo, name, price, and a Get it button — it does " +
-        "NOT show the blurb or who it's for. Those two are yours to say out loud, in your own " +
-        "reply, or the person never hears them at all. A promo code (if there is one) shows as a " +
-        "small chip on the card, but say it too rather than assuming they'll spot it.\n" +
+        "- For a single pick the card draws photo, name, price and a Get it button, and hides " +
+        "\"how I use it\" behind a tap — so the reason is yours to say, or the person never " +
+        "hears it. For several picks each row carries its own one-liner already; frame the set in " +
+        "one line and let them scan. A promo code shows as a small chip either way, but say it " +
+        "too rather than assuming they'll spot it.\n" +
         "- There is no email signup, no free guide, and nothing to collect from the person. The " +
         "recommendation and the buy link are the whole answer.",
       inputSchema: {
@@ -105,8 +122,10 @@ export function createMcpServer(): McpServer {
           "their audience is asking for.",
         ),
         mode: z.enum(["one", "few"]).optional().describe(
-          "'one' (default): the single best pick, shown as one detailed card. 'few': up to 3, for " +
-          "when they've explicitly asked to compare options or want alternatives.",
+          "'one' (default): the single best pick, shown as one detailed card. 'few': up to 6, " +
+          "rendered as a scannable list of rows — use it when they've asked to compare, want " +
+          "alternatives, or asked something goal-shaped ('trying to get into X') where several " +
+          "things could genuinely help rather than one obvious answer.",
         ),
       },
       _meta: {
@@ -119,7 +138,7 @@ export function createMcpServer(): McpServer {
     },
     async ({ question, mode }) => {
       try {
-        const maxResults = mode === "few" ? 3 : 1;
+        const maxResults = mode === "few" ? 6 : 1;
         const { products, quality } = await pickProducts(question, maxResults);
 
         // Logged even when nothing matched — especially when nothing
@@ -197,8 +216,8 @@ export function createMcpServer(): McpServer {
             : "There's nothing in the catalog yet — say so rather than suggesting products from " +
               "general knowledge.")
           : `${products.length} recommendation${products.length === 1 ? "" : "s"}` +
-            `${wanted ? ` under "${category}"` : ""}. The cards only show photo, name, price, ` +
-            `and Get it — say each one's line yourself from the list below:\n` +
+            `${wanted ? ` under "${category}"` : ""}. Each row already carries its own one-liner, ` +
+            `so frame the set in one short line rather than reciting them:\n` +
             products.map((p) => `- ${p.name}${p.brand ? ` (${p.brand})` : ""}` +
               `${p.blurb ? ` — "${p.blurb}"` : ""}`).join("\n");
 

@@ -27,7 +27,7 @@ const VIEW_LABELS: Record<ViewOption, string> = {
   auto: "Auto",
   card: "Card",
   spotlight: "Spotlight",
-  carousel: "Carousel",
+  list: "List",
   grid: "Grid (fullscreen)",
 };
 
@@ -36,7 +36,7 @@ viewSelect.innerHTML = VIEW_OPTIONS.map(
 ).join("");
 
 let currentProducts: ProductPick[] = [];
-let currentView: ViewMode = "carousel";
+let currentView: ViewMode = "list";
 
 function render() {
   renderProducts(root, currentProducts, currentView, (url) => {
@@ -68,7 +68,7 @@ async function runSearch(question: string, view: ViewOption) {
       return;
     }
     currentProducts = data.products ?? [];
-    currentView = data.view ?? "carousel";
+    currentView = data.view ?? "list";
     const note = data.matchQuality ? QUALITY_NOTE[data.matchQuality] : undefined;
     statusEl.textContent = currentProducts.length
       ? `${currentProducts.length} for "${data.question}" — ${currentView} view` +

@@ -94,6 +94,14 @@ export interface Product {
   priceNote: string | null;
   /** Optional promo/discount code shown with the buy button. */
   promoCode: string | null;
+  /**
+   * What this solves, in the creator's words. Never rendered — it exists so
+   * a goal-shaped question ("trying to get into cooking more") has
+   * need-shaped text to match against instead of only product nouns.
+   */
+  problem: string | null;
+  /** How they actually use it. Feeds matching, the model, and the card's expandable. */
+  usage: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -120,6 +128,8 @@ export interface ProductInput {
   imageUrl?: string | null;
   priceNote?: string | null;
   promoCode?: string | null;
+  problem?: string | null;
+  usage?: string | null;
   enabled?: boolean;
 }
 
@@ -167,13 +177,17 @@ async function ensureSchemaUncached(): Promise<void> {
       image_url  TEXT,
       price_note TEXT,
       promo_code TEXT,
+      problem    TEXT,
+      usage      TEXT,
       enabled    BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
-  // Older deployments already have the table without this column.
+  // Older deployments already have the table without these columns.
   await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_code TEXT`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS problem TEXT`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS usage TEXT`;
   await db`CREATE INDEX IF NOT EXISTS products_enabled_idx ON products (enabled)`;
 
   await db`
@@ -226,6 +240,8 @@ function toProduct(row: Record<string, unknown>): Product {
     imageUrl: (row.image_url as string | null) ?? null,
     priceNote: (row.price_note as string | null) ?? null,
     promoCode: (row.promo_code as string | null) ?? null,
+    problem: (row.problem as string | null) ?? null,
+    usage: (row.usage as string | null) ?? null,
     enabled: Boolean(row.enabled),
     createdAt: new Date(row.created_at as string).toISOString(),
     updatedAt: new Date(row.updated_at as string).toISOString(),
@@ -271,6 +287,8 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       imageUrl: input.imageUrl ?? null,
       priceNote: input.priceNote ?? null,
       promoCode: input.promoCode ?? null,
+      problem: input.problem ?? null,
+      usage: input.usage ?? null,
       enabled: input.enabled ?? true,
       createdAt: now,
       updatedAt: now,
@@ -281,12 +299,13 @@ export async function createProduct(input: ProductInput): Promise<Product> {
   await ensureSchema();
   const db = sql();
   const rows = await db`
-    INSERT INTO products (name, brand, category, blurb, audience, keywords, buy_url, image_url, price_note, promo_code, enabled)
+    INSERT INTO products (name, brand, category, blurb, audience, keywords, buy_url, image_url, price_note, promo_code, problem, usage, enabled)
     VALUES (
       ${input.name}::text, ${input.brand ?? null}::text, ${input.category ?? null}::text,
       ${input.blurb ?? ""}::text, ${input.audience ?? null}::text, ${input.keywords ?? ""}::text,
       ${input.buyUrl}::text, ${input.imageUrl ?? null}::text, ${input.priceNote ?? null}::text,
-      ${input.promoCode ?? null}::text, ${input.enabled ?? true}::boolean
+      ${input.promoCode ?? null}::text, ${input.problem ?? null}::text, ${input.usage ?? null}::text,
+      ${input.enabled ?? true}::boolean
     )
     RETURNING *
   `;
@@ -308,6 +327,8 @@ export async function updateProduct(id: number, input: Partial<ProductInput>): P
       ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
       ...(input.priceNote !== undefined ? { priceNote: input.priceNote } : {}),
       ...(input.promoCode !== undefined ? { promoCode: input.promoCode } : {}),
+      ...(input.problem !== undefined ? { problem: input.problem } : {}),
+      ...(input.usage !== undefined ? { usage: input.usage } : {}),
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       updatedAt: new Date().toISOString(),
     });
@@ -330,6 +351,8 @@ export async function updateProduct(id: number, input: Partial<ProductInput>): P
       image_url  = COALESCE(${input.imageUrl ?? null}::text, image_url),
       price_note = COALESCE(${input.priceNote ?? null}::text, price_note),
       promo_code = COALESCE(${input.promoCode ?? null}::text, promo_code),
+      problem    = COALESCE(${input.problem ?? null}::text, problem),
+      usage      = COALESCE(${input.usage ?? null}::text, usage),
       enabled    = COALESCE(${input.enabled ?? null}::boolean, enabled),
       updated_at = now()
     WHERE id = ${id}::integer

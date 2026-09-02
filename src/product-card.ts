@@ -13,13 +13,21 @@
 // affordance at the point of the tap, not scrolled up in a paragraph, and
 // no sentence substitutes for a button. See design/README.md.
 //
-// What the card does NOT carry: the creator's blurb and who-it's-for line.
-// Those are prose, and prose belongs in the agent's reply, not printed a
-// second time in the widget — the model already receives both in the
-// tool's text content (buildResultText, src/mcp-server.ts) and is
-// instructed to speak them ("this is what she said about this"). The card
-// stays to the parts a purchase actually needs at the point of the tap:
-// what it is, what it costs, any promo code, and the button.
+// What the card does NOT carry: the creator's who-it's-for line, and — on a
+// single pick — the blurb. Those are prose, and prose belongs in the agent's
+// reply rather than printed a second time in the widget; the model already
+// receives them in the tool's text content (buildResultText,
+// src/mcp-server.ts) and is instructed to speak them.
+//
+// The one deliberate exception is the LIST density. Four to six results
+// can't have their reasons narrated in a short chat reply without becoming
+// the wall of text this whole interaction exists to avoid, so each list row
+// draws its own clamped one-liner. One pick: the model says it. Six picks:
+// the rows say it.
+//
+// "How I use it" is different from both — it's detail someone wants only
+// after they're already interested, so it ships collapsed behind a
+// <details> rather than spent on everyone up front.
 
 import type { ViewMode } from "./view.js";
 
@@ -30,6 +38,10 @@ export interface ProductPick {
   imageUrl: string | null;
   priceNote: string | null;
   promoCode: string | null;
+  /** Drawn only in the list density — see renderProductCard. */
+  blurb: string;
+  /** Drawn as the detail card's collapsed "how I use it", when present. */
+  usage: string | null;
   /** Already a tracked /r/<id> redirect by the time it reaches here. */
   buyUrl: string;
 }
@@ -66,24 +78,57 @@ function promoMarkup(product: ProductPick): string {
     : "";
 }
 
+// Native <details> on purpose: no JS, no state to keep in sync, and it stays
+// keyboard-operable inside the host's sandboxed iframe where a hand-rolled
+// toggle would be one more thing to get wrong.
+function usageMarkup(product: ProductPick): string {
+  return product.usage
+    ? `<details class="pcard-usage">
+        <summary>How I use it</summary>
+        <p>${escapeHtml(product.usage)}</p>
+      </details>`
+    : "";
+}
+
 /**
- * One product, at one of two densities. Neither carries the creator's
- * blurb or who-it's-for line — see the file header.
+ * One product, at one of three densities (see the file header for what each
+ * does and does not carry).
  *
- * `detail` (the card/spotlight layouts) draws photo, name, price, promo
- * code, and a Get it button. The card itself is NOT clickable — it's an
- * <article> containing exactly one button, because a button inside a
- * button is invalid and breaks keyboard traversal.
- *
- * Compact (carousel/grid) is smaller still: the whole tile becomes the
- * button, with photo + name + price + promo code.
+ * - `detail` (card/spotlight): photo, name, price, promo, a Get it button,
+ *   and the collapsed "how she uses it". NOT clickable as a whole — it's an
+ *   <article> containing exactly one button, because a button inside a
+ *   button is invalid and breaks keyboard traversal.
+ * - `list`: a horizontal row — small thumb, name, clamped one-liner, price
+ *   and promo. The whole row is the button.
+ * - `compact` (grid/fullscreen): photo, name, price, promo. The whole tile
+ *   is the button.
  */
 export function renderProductCard(
   product: ProductPick,
   onOpen: (url: string) => void,
-  detail: boolean,
+  density: "detail" | "list" | "compact",
 ): HTMLElement {
-  if (!detail) {
+  if (density === "list") {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "pcard pcard-row";
+    row.setAttribute("aria-label", `Get ${product.name}`);
+    row.innerHTML = `
+      <span class="pcard-img">${imageMarkup(product)}</span>
+      <span class="pcard-body">
+        <span class="pcard-name">${escapeHtml(product.name)}</span>
+        ${product.blurb ? `<span class="pcard-line">${escapeHtml(product.blurb)}</span>` : ""}
+        <span class="pcard-meta">${priceMarkup(product)}${promoMarkup(product)}</span>
+      </span>
+      <span class="pcard-go" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M7 13 13 7M8 7h5v5"/></svg>
+      </span>`;
+    row.addEventListener("click", () => onOpen(product.buyUrl));
+    return row;
+  }
+
+  if (density === "compact") {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = "pcard pcard-compact";
@@ -110,6 +155,7 @@ export function renderProductCard(
         ${priceMarkup(product)}
         ${promoMarkup(product)}
       </div>
+      ${usageMarkup(product)}
     </div>`;
   card.querySelector<HTMLButtonElement>(".pcard-buy")!
     .addEventListener("click", () => onOpen(product.buyUrl));
@@ -119,23 +165,22 @@ export function renderProductCard(
 const CONTAINER_CLASS: Record<ViewMode, string> = {
   card: "view-solo",
   spotlight: "view-split",
-  carousel: "view-strip",
+  list: "view-list",
   grid: "view-wall",
 };
 
-// Which layouts get the full pick vs. the compact tile. This is the only
-// real difference between the four views — they are two components in four
-// containers, not four components.
-const IS_DETAIL: Record<ViewMode, boolean> = {
-  card: true,
-  spotlight: true,
-  carousel: false,
-  grid: false,
+// Which layout gets which density. Three components in four containers —
+// card and spotlight are the same component at different widths.
+const DENSITY: Record<ViewMode, "detail" | "list" | "compact"> = {
+  card: "detail",
+  spotlight: "detail",
+  list: "list",
+  grid: "compact",
 };
 
 /**
- * Renders `products` into `root` in the given view — a container shaped
- * for the count (solo / split-to-fit / scrolling strip / wrapping wall).
+ * Renders `products` into `root` in the given view — a container shaped for
+ * the count (solo / split-to-fit / vertical stack / wrapping wall).
  * `onOpen(url)` fires when someone taps through to buy.
  */
 export function renderProducts(
@@ -152,43 +197,10 @@ export function renderProducts(
   }
 
   const container = document.createElement("div");
-  container.className = CONTAINER_CLASS[view] ?? CONTAINER_CLASS.carousel;
-  const detail = IS_DETAIL[view] ?? false;
+  container.className = CONTAINER_CLASS[view] ?? CONTAINER_CLASS.list;
+  const density = DENSITY[view] ?? "list";
   for (const product of products) {
-    container.appendChild(renderProductCard(product, onOpen, detail));
-  }
-
-  // The carousel's own scrollbar is hidden (mcp-app.html) for a cleaner
-  // look, which means nothing on screen otherwise shows there's more to
-  // scroll to — a small floating "swipe for more" chip fills that gap.
-  // Only for 'carousel': 'grid' scrolls vertically inside a normal page,
-  // which needs no special affordance the way a hidden horizontal
-  // scrollbar does.
-  if (view === "carousel") {
-    const wrapper = document.createElement("div");
-    wrapper.className = "shots-wrapper";
-    wrapper.appendChild(container);
-
-    const hint = document.createElement("div");
-    hint.className = "scroll-hint";
-    hint.setAttribute("aria-hidden", "true");
-    hint.innerHTML = `<span class="scroll-hint-chip">Swipe for more ›</span>`;
-    wrapper.appendChild(hint);
-    root.appendChild(wrapper);
-
-    const updateHint = () => {
-      const scrollable = container.scrollWidth > container.clientWidth + 4;
-      const atEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 4;
-      hint.classList.toggle("visible", scrollable && !atEnd);
-    };
-    container.addEventListener("scroll", updateHint, { passive: true });
-    // Images are still loading right after this runs, which can change
-    // scrollWidth — check now and shortly after so the hint doesn't flash
-    // on/off once they settle.
-    updateHint();
-    requestAnimationFrame(updateHint);
-    setTimeout(updateHint, 300);
-    return;
+    container.appendChild(renderProductCard(product, onOpen, density));
   }
 
   root.appendChild(container);

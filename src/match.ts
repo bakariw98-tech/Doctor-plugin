@@ -22,6 +22,15 @@ const STOPWORDS = new Set([
   "this", "that", "with", "about", "can", "need", "my", "your", "his",
   "her", "not", "just", "recommend", "recommends", "use", "uses", "using",
   "get", "got", "buy", "best", "good", "any", "one", "which", "who",
+  // Goal-question scaffolding. These carry no product signal, but they are
+  // most of what a goal-shaped question is made of ("I'm TRYING to GET INTO
+  // cooking MORE"), and every one of them left in the query inflates the
+  // coverage denominator — which is what decides whether an answer is
+  // presented confidently or hedged as a steer. Leaving them in made a good
+  // goal match score "weak" and apologise for itself.
+  "trying", "try", "into", "more", "want", "wants", "wanting", "start",
+  "starting", "started", "looking", "look", "need", "needs", "help",
+  "something", "anything", "stuff", "thing", "things", "would",
 ]);
 
 function tokenize(text: string): string[] {

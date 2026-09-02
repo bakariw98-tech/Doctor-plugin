@@ -14,22 +14,23 @@
 // know about. Picture-in-picture isn't modeled here: it's for an embedded
 // live video staying visible, and this app has no inline player.
 
-export type ViewMode = "card" | "spotlight" | "carousel" | "grid";
+export type ViewMode = "card" | "spotlight" | "list" | "grid";
 export type ViewOption = "auto" | ViewMode;
 
-export const VIEW_OPTIONS: readonly ViewOption[] = ["auto", "card", "spotlight", "carousel", "grid"];
+export const VIEW_OPTIONS: readonly ViewOption[] = ["auto", "card", "spotlight", "list", "grid"];
 
 /**
  * 'auto' picks the inline layout that fits the result count: 'card' for a
- * single best match, 'spotlight' for a small handful (each gets more room —
- * larger thumbnail, description snippet), 'carousel' for a broader set to
- * skim at a glance. An explicit view always wins, so a caller can force any
- * layout regardless of result count (useful for testing/comparing them, and
- * for the widget's own fullscreen -> 'grid' transition).
+ * single best match, 'spotlight' for two or three, and 'list' — a vertical
+ * stack of compact rows, each carrying its own one-liner — once there are
+ * enough that the answer has to be scannable rather than narrated. An
+ * explicit view always wins, so a caller can force any layout regardless of
+ * count (useful for testing/comparing them, and for the widget's own
+ * fullscreen -> 'grid' transition).
  */
 export function resolveView(requested: ViewOption | undefined, resultCount: number): ViewMode {
   if (requested && requested !== "auto") return requested;
   if (resultCount <= 1) return "card";
   if (resultCount <= 3) return "spotlight";
-  return "carousel";
+  return "list";
 }

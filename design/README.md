@@ -47,6 +47,22 @@ invite someone to implement it as widget text. The difference is that the
 name, blurb and button now *must* be drawn, because they are the
 component.
 
+## The one-liner splits by density, on purpose
+
+A single pick does **not** draw the creator's blurb — the model says it once,
+in chat, in her voice. A list of four-to-six **does** draw a clamped one-liner
+per row.
+
+That looks inconsistent until you try the alternative: an agent narrating six
+reasons in one reply is exactly the wall of text this interaction exists to
+avoid, and six rows with no reason at all are just six names to re-research.
+So the rule is about what can be *spoken* versus what has to be *scanned* —
+one pick is spoken, several are scanned.
+
+"How I use it" sits behind a `<details>` on the detail card either way: it's
+detail someone wants only once they're already interested, so it costs
+nothing until they ask for it.
+
 ## Two components, four containers
 
 The old notes predicted the four `ViewMode`s would collapse into one

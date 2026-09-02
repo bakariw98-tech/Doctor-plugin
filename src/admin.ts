@@ -270,6 +270,16 @@ function productForm(product: Product | null): string {
         <small style="color:#6b665f">Not shown on the card — spoken by the plugin instead, in your words. Nothing is generated for you.</small>
       </label>
       ${field("Who it's for", "audience", product?.audience ?? null, { placeholder: "Anyone cooking most nights" })}
+      <label><span>What it solves</span>
+        <textarea name="problem" rows="2" style="font:inherit;width:100%;max-width:420px;padding:7px 9px;border:1px solid #d8d3cc;border-radius:6px;box-sizing:border-box"
+          placeholder="Stops me buying a new dull knife every year.">${escapeHtml(product?.problem ?? "")}</textarea>
+        <small style="color:#6b665f">Never shown. It's what lets someone asking a goal — "I'm trying to cook more, what should I get" — find this.</small>
+      </label>
+      <label><span>How you use it</span>
+        <textarea name="usage" rows="2" style="font:inherit;width:100%;max-width:420px;padding:7px 9px;border:1px solid #d8d3cc;border-radius:6px;box-sizing:border-box"
+          placeholder="It's the only knife I use for prep — breaking down chicken, everything.">${escapeHtml(product?.usage ?? "")}</textarea>
+        <small style="color:#6b665f">Shown on the card as a tap-to-expand, and spoken by the plugin when it's relevant.</small>
+      </label>
       ${field("Match keywords", "keywords", product?.keywords ?? null, { placeholder: "chopping prep everyday cooking", hint: "Never shown. Extra words that should find this product." })}
       ${field("Buy link", "buyUrl", product?.buyUrl ?? null, { type: "url", placeholder: "https://…", hint: "Your affiliate link. Clicks route through /r/ so they can be counted." })}
       ${field("Price note", "priceNote", product?.priceNote ?? null, { placeholder: "~$180", hint: "Display only — never checked against the retailer." })}
@@ -492,6 +502,8 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
       keywords: req.body.keywords?.trim() ?? "",
       priceNote: req.body.priceNote?.trim() || null,
       promoCode: req.body.promoCode?.trim() || null,
+      problem: req.body.problem?.trim() || null,
+      usage: req.body.usage?.trim() || null,
       enabled: req.body.enabled === "on",
       ...(imageUrl !== undefined ? { imageUrl } : {}),
     };
