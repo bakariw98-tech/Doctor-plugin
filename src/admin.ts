@@ -493,17 +493,26 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
       return dashboardPage(id, "That buy link isn't a valid http:// or https:// URL.");
     }
 
+    // Only send fields this submission actually carried. The dashboard form
+    // posts all of them, so clearing a blurb from the UI still clears it —
+    // but a partial POST (a script touching two fields) must not blank the
+    // rest. `blurb` and `keywords` defaulted to "" rather than null here,
+    // and "" is not null, so COALESCE happily wrote it: a backfill script
+    // that never mentioned either field wiped every blurb in the catalog.
+    const present = <T,>(key: string, value: T) =>
+      req.body[key] !== undefined ? { [key]: value } : {};
+
     const fields = {
       name,
-      brand: req.body.brand?.trim() || null,
-      category: req.body.category?.trim() || null,
-      blurb: req.body.blurb ?? "",
-      audience: req.body.audience?.trim() || null,
-      keywords: req.body.keywords?.trim() ?? "",
-      priceNote: req.body.priceNote?.trim() || null,
-      promoCode: req.body.promoCode?.trim() || null,
-      problem: req.body.problem?.trim() || null,
-      usage: req.body.usage?.trim() || null,
+      ...present("brand", req.body.brand?.trim() || null),
+      ...present("category", req.body.category?.trim() || null),
+      ...present("blurb", req.body.blurb ?? ""),
+      ...present("audience", req.body.audience?.trim() || null),
+      ...present("keywords", req.body.keywords?.trim() ?? ""),
+      ...present("priceNote", req.body.priceNote?.trim() || null),
+      ...present("promoCode", req.body.promoCode?.trim() || null),
+      ...present("problem", req.body.problem?.trim() || null),
+      ...present("usage", req.body.usage?.trim() || null),
       enabled: req.body.enabled === "on",
       ...(imageUrl !== undefined ? { imageUrl } : {}),
     };
