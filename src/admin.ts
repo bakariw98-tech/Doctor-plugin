@@ -106,13 +106,22 @@ function escapeHtml(input: string): string {
     .replace(/'/g, "&#39;");
 }
 
-const PAGE_STYLE = `
+// The dashboard's own accent, not hardcoded — this is the creator's page,
+// so it borrows the same accent the widget renders their picks in
+// (creator.accent, falling back to the shared default) rather than always
+// showing the built-in orange. A creator who set an accent should see
+// their own color the moment they log in, not just on the card.
+const ACCENT = creator.accent ?? "#b5541f";
+
+function pageStyle(): string {
+  return `
   body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          color: #262422; background: #fefdfc; margin: 0; padding: 32px 20px; }
   main { max-width: 760px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   h2 { font-size: 15px; margin: 32px 0 10px; }
   p.sub { color: #6b665f; margin: 0 0 24px; font-size: 13px; }
+  a { color: ${ACCENT}; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e7e2da; vertical-align: top; }
   th { color: #6b665f; font-weight: 600; }
@@ -125,21 +134,37 @@ const PAGE_STYLE = `
     border: 1px solid #d8d3cc; border-radius: 6px; box-sizing: border-box;
   }
   button, .btn { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px;
-    border-radius: 6px; border: 1px solid #d8d3cc; background: #fff; cursor: pointer; }
+    border-radius: 6px; border: 1px solid #d8d3cc; background: #fff; cursor: pointer;
+    color: inherit; text-decoration: none; display: inline-block; }
   button.danger { color: #c0392b; border-color: #e5b4ac; }
-  button.primary { color: #fff; background: #b5541f; border-color: #b5541f; padding: 9px 18px; font-size: 14px; }
-  .actions { margin-top: 8px; display: flex; gap: 8px; }
+  button.primary, .btn.primary { color: #fff; background: ${ACCENT}; border-color: ${ACCENT}; padding: 9px 18px; font-size: 14px; }
+  .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
   .card { border: 1px solid #e7e2da; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; }
   .checkbox-row input { width: auto; }
   .error { color: #c0392b; font-size: 13px; margin: 0 0 16px; }
   .notice { background: #fdf3e9; border: 1px solid #edd3b3; border-radius: 8px;
     padding: 10px 12px; font-size: 12.5px; margin: 0 0 16px; }
+  .notice.good { background: #eef6ee; border-color: #bfdcc0; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+    padding: 2px 7px; border-radius: 5px; margin-left: 6px; vertical-align: middle; }
+  .badge.dead { color: #c0392b; background: #fbe9e7; }
+  .badge.live { color: #2e7d32; background: #e9f5ea; }
+  .badge.draft { color: #6b665f; background: #f1efe9; }
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 24px; }
+  .stat { flex: 1 1 140px; border: 1px solid #e7e2da; border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 22px; line-height: 1.2; }
+  .stat span { color: #6b665f; font-size: 12px; }
+  .headline { border: 1px solid #edd3b3; background: #fdf3e9; border-radius: 10px;
+    padding: 16px 18px; margin: 0 0 20px; }
+  .headline b { font-size: 18px; }
+  .crumb { font-size: 12.5px; margin: 0 0 16px; }
 `;
+}
 
 function page(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)}</title><style>${PAGE_STYLE}</style></head><body><main>${body}</main></body></html>`;
+<title>${escapeHtml(title)}</title><style>${pageStyle()}</style></head><body><main>${body}</main></body></html>`;
 }
 
 function loginPage(error?: string): AdminResponse {
@@ -302,10 +327,11 @@ function productsTable(products: Product[]): string {
   }
   const rows = products.map((p) => `
     <tr>
-      <td>${escapeHtml(p.name)}${p.brand ? `<br><small style="color:#6b665f">${escapeHtml(p.brand)}</small>` : ""}</td>
+      <td>${escapeHtml(p.name)}${p.brand ? `<br><small style="color:#6b665f">${escapeHtml(p.brand)}</small>` : ""}
+        ${p.linkStatus === "dead" ? `<span class="badge dead" title="${escapeHtml(p.linkNote ?? "")}">Broken link</span>` : ""}</td>
       <td>${escapeHtml(p.category ?? "")}</td>
       <td>${p.blurb ? escapeHtml(p.blurb.slice(0, 70)) + (p.blurb.length > 70 ? "…" : "") : `<span class="empty">needs a line</span>`}</td>
-      <td>${p.enabled ? "Live" : "Draft"}</td>
+      <td><span class="badge ${p.enabled ? "live" : "draft"}">${p.enabled ? "Live" : "Draft"}</span></td>
       <td>
         <form class="inline" method="post" action="/admin?action=toggle-product">
           <input type="hidden" name="id" value="${p.id}" />
@@ -319,6 +345,42 @@ function productsTable(products: Product[]): string {
       </td>
     </tr>`).join("");
   return `<table><thead><tr><th>Product</th><th>Category</th><th>Your line</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/**
+ * A live count of the catalog's link health, computed from the same
+ * `products` the dashboard already loaded — no second query. Only "dead"
+ * is ever alarming (see src/linkcheck.ts on why "unknown" must not read as
+ * a problem): a bot-blocked Amazon check is normal, not a broken link.
+ */
+function linkHealthSection(products: Product[]): string {
+  const dead = products.filter((p) => p.linkStatus === "dead" && p.enabled);
+  const checked = products.filter((p) => p.linkCheckedAt !== null).length;
+  const lastChecked = products
+    .map((p) => p.linkCheckedAt)
+    .filter((d): d is string => d !== null)
+    .sort()
+    .pop();
+
+  const status = dead.length > 0
+    ? `<p class="notice">${dead.length} live product${dead.length === 1 ? "" : "s"}
+        ${dead.length === 1 ? "has" : "have"} a buy link that's stopped working — your audience
+        can't check out on ${dead.length === 1 ? "it" : "them"} right now.</p>
+       <table><tbody>${dead.map((p) =>
+         `<tr><td>${escapeHtml(p.name)}</td><td style="color:#6b665f">${escapeHtml(p.linkNote ?? "")}</td>
+           <td><a class="btn" href="/admin?edit=${p.id}">Fix it</a></td></tr>`).join("")}</tbody></table>`
+    : checked > 0
+      ? `<p class="notice good">No broken links found in your last check.</p>`
+      : `<p class="empty">Not checked yet — this runs automatically once a day, or trigger it below.</p>`;
+
+  return `
+    <div class="card">
+      <h2 style="margin-top:0">Link health</h2>
+      <p class="sub">${checked} of ${products.length} products checked${lastChecked ? ` · last checked ${escapeHtml(new Date(lastChecked).toLocaleString())}` : ""}.</p>
+      ${status}
+      <p class="actions"><a class="btn" href="/api/linkcheck?token=${encodeURIComponent(requireAdminToken())}&limit=15" target="_blank" rel="noopener">Check links now</a></p>
+      <p class="sub" style="margin:6px 0 0">Opens a status report in a new tab and updates the results above — refresh this page after to see it.</p>
+    </div>`;
 }
 
 function countList(items: { question: string; count: number }[], emptyText: string): string {
@@ -344,10 +406,13 @@ function insightsSection(insights: Insights): string {
       `</tbody></table>`;
 
   return `
-    <h2>What your audience is asking</h2>
-    <p class="sub">${insights.totalQuestions} question${insights.totalQuestions === 1 ? "" : "s"} ·
-      ${insights.totalClicks} click${insights.totalClicks === 1 ? "" : "s"} ·
-      ${rate}% of the questions you had a pick for ended in a click.</p>
+    <h2>Your results</h2>
+    <div class="stat-row">
+      <div class="stat"><b>${insights.totalQuestions}</b><span>question${insights.totalQuestions === 1 ? "" : "s"} asked</span></div>
+      <div class="stat"><b>${insights.totalClicks}</b><span>click${insights.totalClicks === 1 ? "" : "s"} to buy</span></div>
+      <div class="stat"><b>${rate}%</b><span>of answered questions ended in a click</span></div>
+      <div class="stat"><b>${insights.gapVolume}</b><span>question${insights.gapVolume === 1 ? "" : "s"} with no strong pick</span></div>
+    </div>
 
     <div class="card">
       <h2 style="margin-top:0">Most asked</h2>
@@ -357,8 +422,10 @@ function insightsSection(insights: Insights): string {
     <div class="card">
       <h2 style="margin-top:0">Nothing good to recommend</h2>
       <p class="sub">Questions where you had no strong pick. Each one is a product your audience
-        already wants and you aren't recommending yet.</p>
+        already wants and you aren't recommending yet — that's a sponsorship or a purchase to go
+        close, not just a data point.</p>
       ${countList(insights.gaps, "No gaps — everything asked for had a match.")}
+      ${insights.gaps.length >= 10 ? `<p class="sub" style="margin:8px 0 0"><a href="/admin?action=gaps">See the full gap report →</a></p>` : ""}
     </div>
 
     <div class="card">
@@ -367,6 +434,47 @@ function insightsSection(insights: Insights): string {
     </div>
 
     <p><a class="btn" href="/admin?action=export">Export questions &amp; gaps (CSV)</a></p>`;
+}
+
+/**
+ * A standalone page for the gap report — deliberately its own view rather
+ * than a section of the main dashboard. This is the thing worth handing
+ * to someone else (a sponsor, a network, the creator's own future self):
+ * every unanswered question, ranked, with the total volume behind it, and
+ * nothing else on the page competing for attention.
+ */
+async function gapReportPage(): Promise<AdminResponse> {
+  const insights = await getInsights(200);
+  const rows = insights.gaps.length === 0
+    ? `<p class="empty">No gaps — everything asked for so far had a strong match.</p>`
+    : `<table><thead><tr><th>Question</th><th style="text-align:right">Times asked</th></tr></thead><tbody>` +
+      insights.gaps.map((g) =>
+        `<tr><td>${escapeHtml(g.question)}</td><td style="text-align:right">${g.count}</td></tr>`).join("") +
+      `</tbody></table>`;
+
+  return html(
+    200,
+    page(
+      `Gap report · ${creator.appName}`,
+      `
+        <p class="crumb"><a href="/admin">← Back to dashboard</a></p>
+        <h1>What you don't recommend yet</h1>
+        <p class="sub">Every question your plugin couldn't answer with confidence, ranked by how
+          often it came up.</p>
+
+        <div class="headline">
+          <b>${insights.gapVolume} question${insights.gapVolume === 1 ? "" : "s"}</b>
+          out of ${insights.totalQuestions} asked had no strong pick behind ${insights.gapVolume === 1 ? "it" : "them"}.
+          Each row below is real demand for something you aren't recommending — a product to add,
+          or a gap worth naming to a sponsor.
+        </div>
+
+        <div class="card">${rows}</div>
+
+        <p><a class="btn" href="/admin?action=export">Export as CSV</a></p>
+      `,
+    ),
+  );
 }
 
 async function dashboardPage(editId?: number, error?: string): Promise<AdminResponse> {
@@ -391,6 +499,8 @@ async function dashboardPage(editId?: number, error?: string): Promise<AdminResp
 
         <h2>Your catalog</h2>
         ${productsTable(products)}
+
+        ${linkHealthSection(products)}
 
         <h2>${editing ? "Edit product" : "Add a product"}</h2>
         <div class="card">${productForm(editing)}</div>
@@ -438,6 +548,10 @@ export async function handleAdminRequest(req: AdminRequest): Promise<AdminRespon
 
   if (!isAuthed(req)) {
     return loginPage();
+  }
+
+  if (req.action === "gaps" && req.method === "GET") {
+    return gapReportPage();
   }
 
   if (req.action === "export" && req.method === "GET") {

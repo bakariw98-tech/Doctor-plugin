@@ -509,6 +509,13 @@ export interface Insights {
   questionsWithClick: number;
   topQuestions: QuestionCount[];
   gaps: QuestionCount[];
+  /**
+   * Every question with no strong match, not just the top `limit` distinct
+   * phrasings in `gaps` — the headline number for the gap report ("N
+   * questions had no strong pick"), which has to be the true total or it
+   * quietly shrinks every time the creator raises `limit` to see more rows.
+   */
+  gapVolume: number;
   products: ProductStat[];
 }
 
@@ -535,6 +542,7 @@ export async function getInsights(limit = 10): Promise<Insights> {
       ).size,
       topQuestions: tally(s.questions),
       gaps: tally(s.questions.filter((q) => q.matchQuality !== "strong")),
+      gapVolume: s.questions.filter((q) => q.matchQuality !== "strong").length,
       products: s.products.map((p) => ({
         id: p.id,
         name: p.name,
@@ -549,7 +557,8 @@ export async function getInsights(limit = 10): Promise<Insights> {
   const [totals] = await db`
     SELECT
       count(*)::int AS total,
-      count(*) FILTER (WHERE match_quality <> 'none')::int AS answered
+      count(*) FILTER (WHERE match_quality <> 'none')::int AS answered,
+      count(*) FILTER (WHERE match_quality <> 'strong')::int AS gap_volume
     FROM product_questions
   `;
   const [clicks] = await db`
@@ -580,6 +589,7 @@ export async function getInsights(limit = 10): Promise<Insights> {
     totalQuestions: Number(totals.total),
     totalClicks: Number(clicks.total),
     answeredQuestions: Number(totals.answered),
+    gapVolume: Number(totals.gap_volume),
     questionsWithClick: Number(clicks.with_question),
     topQuestions: topQuestions.map((r) => ({ question: String(r.question), count: Number(r.count) })),
     gaps: gaps.map((r) => ({ question: String(r.question), count: Number(r.count) })),
