@@ -103,9 +103,26 @@ export interface Product {
   /** How they actually use it. Feeds matching, the model, and the card's expandable. */
   usage: string | null;
   enabled: boolean;
+  /**
+   * Last verdict from src/linkcheck.ts. Null until the link has ever been
+   * checked. Deliberately not part of ProductInput — the creator edits
+   * their catalog, the checker edits this, and neither should be able to
+   * clobber the other's column.
+   */
+  linkStatus: LinkStatus | null;
+  linkCheckedAt: string | null;
+  linkHttpStatus: number | null;
+  linkNote: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * "unknown" is not a soft "dead" — it means the check was inconclusive
+ * (merchant blocked us, timed out, 5xx'd). See src/linkcheck.ts for why
+ * that distinction is the whole point of the feature.
+ */
+export type LinkStatus = "ok" | "dead" | "unknown";
 
 export type MatchQuality = "strong" | "weak" | "none";
 
@@ -180,6 +197,10 @@ async function ensureSchemaUncached(): Promise<void> {
       problem    TEXT,
       usage      TEXT,
       enabled    BOOLEAN NOT NULL DEFAULT true,
+      link_status      TEXT,
+      link_checked_at  TIMESTAMPTZ,
+      link_http_status INTEGER,
+      link_note        TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -188,6 +209,10 @@ async function ensureSchemaUncached(): Promise<void> {
   await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS promo_code TEXT`;
   await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS problem TEXT`;
   await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS usage TEXT`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS link_status TEXT`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS link_checked_at TIMESTAMPTZ`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS link_http_status INTEGER`;
+  await db`ALTER TABLE products ADD COLUMN IF NOT EXISTS link_note TEXT`;
   await db`CREATE INDEX IF NOT EXISTS products_enabled_idx ON products (enabled)`;
 
   await db`
@@ -243,6 +268,12 @@ function toProduct(row: Record<string, unknown>): Product {
     problem: (row.problem as string | null) ?? null,
     usage: (row.usage as string | null) ?? null,
     enabled: Boolean(row.enabled),
+    linkStatus: (row.link_status as LinkStatus | null) ?? null,
+    linkCheckedAt: row.link_checked_at ? new Date(row.link_checked_at as string).toISOString() : null,
+    linkHttpStatus: row.link_http_status === null || row.link_http_status === undefined
+      ? null
+      : Number(row.link_http_status),
+    linkNote: (row.link_note as string | null) ?? null,
     createdAt: new Date(row.created_at as string).toISOString(),
     updatedAt: new Date(row.updated_at as string).toISOString(),
   };
@@ -290,6 +321,10 @@ export async function createProduct(input: ProductInput): Promise<Product> {
       problem: input.problem ?? null,
       usage: input.usage ?? null,
       enabled: input.enabled ?? true,
+      linkStatus: null,
+      linkCheckedAt: null,
+      linkHttpStatus: null,
+      linkNote: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -426,6 +461,32 @@ export async function logClick(input: { productId: number; questionId: number | 
   await sql()`
     INSERT INTO product_clicks (product_id, question_id)
     VALUES (${input.productId}::integer, ${input.questionId}::integer)
+  `;
+}
+
+/** Records one link-check verdict from src/linkcheck.ts. Silently no-ops on an id that no longer exists — the product can be deleted mid-run. */
+export async function recordLinkCheck(
+  id: number,
+  result: { status: LinkStatus; httpStatus: number | null; note: string },
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (isDemoMode()) {
+    const existing = store().products.find((p) => p.id === id);
+    if (!existing) return;
+    existing.linkStatus = result.status;
+    existing.linkCheckedAt = now;
+    existing.linkHttpStatus = result.httpStatus;
+    existing.linkNote = result.note;
+    return;
+  }
+  await ensureSchema();
+  await sql()`
+    UPDATE products SET
+      link_status      = ${result.status}::text,
+      link_checked_at  = now(),
+      link_http_status = ${result.httpStatus}::integer,
+      link_note        = ${result.note}::text
+    WHERE id = ${id}::integer
   `;
 }
 

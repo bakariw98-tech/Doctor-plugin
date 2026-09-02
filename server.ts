@@ -16,6 +16,7 @@ import { getProduct, logClick } from "./src/db.js";
 import { pickProducts, toWire } from "./src/recommend.js";
 import { resolveView, type ViewOption } from "./src/view.js";
 import { handleAdminRequest, type AdminRequest, type UploadedFile } from "./src/admin.js";
+import { checkCatalog } from "./src/linkcheck.js";
 
 // Local dev is the one deployment target that isn't Vercel, so it's the one
 // place src/recommend.ts's siteOrigin() can't fall back to VERCEL_URL. Set a
@@ -184,6 +185,32 @@ function parseCookie(header: string | undefined, name: string): string | undefin
 
 app.get("/admin", adminHandler);
 app.post("/admin", adminHandler);
+
+// Mirrors api/linkcheck.ts's auth so local dev behaves the same as
+// production — see that file for why there are two accepted credentials.
+app.get("/api/linkcheck", async (req, res) => {
+  const auth = req.headers.authorization ?? "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const adminToken = process.env.ADMIN_TOKEN?.trim();
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const authorized =
+    (!!cronSecret && bearer === cronSecret) ||
+    (!!adminToken && (bearer === adminToken || queryToken === adminToken));
+  if (!authorized) {
+    res.status(401).json({ error: "Missing or invalid credentials." });
+    return;
+  }
+  const limitParam = req.query.limit;
+  const limit = typeof limitParam === "string" ? Number(limitParam) : undefined;
+  try {
+    const summary = await checkCatalog(limit && Number.isFinite(limit) ? { limit } : {});
+    res.status(200).json(summary);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
 
 const PORT = Number(process.env.PORT ?? 3001);
 app.listen(PORT, () => {

@@ -5,5 +5,8 @@
     { "source": "/mcp", "destination": "/api/mcp" },
     { "source": "/admin", "destination": "/api/admin" },
     { "source": "/r/:id", "destination": "/api/redirect?id=:id" }
+  ],
+  "crons": [
+    { "path": "/api/linkcheck", "schedule": "0 9 * * *" }
   ]
 }
