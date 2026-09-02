@@ -59,15 +59,12 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
         `generally — say clearly that they don't have a pick for what was asked, then offer this ` +
         `as the nearest real thing rather than leaving them with nothing:`;
 
-  const single = products.length === 1;
   return `${header}\n${lines}\n\n` +
-    (single
-      ? `The card shows the photo, name, price and a Get it button — not their words. Say the ` +
-        `reason yourself, in their voice, in a sentence or two. "How they use it" is already on ` +
-        `the card behind a tap, so only mention it if it answers what was actually asked.`
-      : `Each row already carries its own one-liner, so do NOT repeat them back one by one — one ` +
-        `short line framing the set is enough.`) +
-    ` If there's a promo code, say it aloud as well as it being on the card.`;
+    `The card${products.length === 1 ? "" : "s"} show${products.length === 1 ? "s" : ""} the ` +
+    `photo, name, price and a Get it button — not their words. Say the reason yourself, in their ` +
+    `voice, in a sentence or two per pick. "How they use it" is already on the card behind a tap, ` +
+    `so only mention it if it answers what was actually asked. If there's a promo code, say it ` +
+    `aloud as well as it being on the card.`;
 }
 
 export function createMcpServer(): McpServer {
@@ -107,11 +104,12 @@ export function createMcpServer(): McpServer {
         "confident recommendation, and equally don't just say 'I don't know' and stop: steer them " +
         "to something real ('he doesn't have a pan he recommends, but he does swear by this knife " +
         "for prep').\n" +
-        "- For a single pick the card draws photo, name, price and a Get it button, and hides " +
-        "\"how I use it\" behind a tap — so the reason is yours to say, or the person never " +
-        "hears it. For several picks each row carries its own one-liner already; frame the set in " +
-        "one line and let them scan. A promo code shows as a small chip either way, but say it " +
-        "too rather than assuming they'll spot it.\n" +
+        "- Every pick, one or several, renders as the same large card — photo, name, price, a " +
+        "Get it button, and \"how I use it\" behind a tap. Say the reason(s) yourself; the card " +
+        "never prints the blurb. Never more than 3 cards — if the honest answer is 'she has a " +
+        "dozen kitchen things', name the 3 that best fit what was actually asked, not everything " +
+        "she owns. A promo code shows as a small chip, but say it too rather than assuming they'll " +
+        "spot it.\n" +
         "- There is no email signup, no free guide, and nothing to collect from the person. The " +
         "recommendation and the buy link are the whole answer.",
       inputSchema: {
@@ -122,10 +120,12 @@ export function createMcpServer(): McpServer {
           "their audience is asking for.",
         ),
         mode: z.enum(["one", "few"]).optional().describe(
-          "'one' (default): the single best pick, shown as one detailed card. 'few': up to 6, " +
-          "rendered as a scannable list of rows — use it when they've asked to compare, want " +
+          "'one' (default): the single best pick, shown as one detailed card. 'few': up to 3, " +
+          "same large card format, side by side — use it when they've asked to compare, want " +
           "alternatives, or asked something goal-shaped ('trying to get into X') where several " +
-          "things could genuinely help rather than one obvious answer.",
+          "things could genuinely help rather than one obvious answer. Never more than 3: someone " +
+          "shown a long list doesn't pick, they bounce — if more than 3 things would qualify, " +
+          "that's a signal to pick the 3 strongest rather than dump the rest.",
         ),
       },
       _meta: {
@@ -138,7 +138,7 @@ export function createMcpServer(): McpServer {
     },
     async ({ question, mode }) => {
       try {
-        const maxResults = mode === "few" ? 6 : 1;
+        const maxResults = mode === "few" ? 3 : 1;
         const { products, quality } = await pickProducts(question, maxResults);
 
         // Logged even when nothing matched — especially when nothing
@@ -185,9 +185,11 @@ export function createMcpServer(): McpServer {
       description:
         "Shows what the creator recommends, optionally narrowed to one category — for browsing " +
         "questions like 'what does he recommend for the kitchen' or 'what gear does she use', " +
-        "where there's no single specific need to match against. For a specific question ('what " +
-        "knife do you use'), call recommend_product instead: it picks rather than lists, and it's " +
-        "the one that records what the audience is asking for.",
+        "where there's no single specific need to match against. Shows at most 3 — a long list " +
+        "isn't a browsing experience here, it's a wall someone bounces off, so this always picks " +
+        "the 3 to show rather than dumping every match. For a specific question ('what knife do " +
+        "you use'), call recommend_product instead: it picks rather than lists, and it's the one " +
+        "that records what the audience is asking for.",
       inputSchema: {
         category: z.string().optional().describe(
           "Optional category filter, matched case-insensitively against the creator's own " +
@@ -203,11 +205,22 @@ export function createMcpServer(): McpServer {
     },
     async ({ category }) => {
       try {
+        const LIST_CAP = 3;
         const all = await listProducts({ enabledOnly: true });
         const wanted = category?.trim().toLowerCase();
-        const products = wanted
+        const matched = wanted
           ? all.filter((p) => (p.category ?? "").toLowerCase().includes(wanted))
           : all;
+        // Never render more than a handful — someone shown everything the
+        // creator sells doesn't pick, they bounce. Found live: "what
+        // utensils does he use" with no matching category fell through to
+        // "list everything", and the whole 21-product catalog rendered as
+        // one screen. Most-clicked first, so the cap keeps what's proven to
+        // convert rather than an arbitrary slice.
+        const products = matched
+          .slice()
+          .sort((a, b) => b.id - a.id)
+          .slice(0, LIST_CAP);
 
         const text = products.length === 0
           ? (wanted
@@ -215,9 +228,9 @@ export function createMcpServer(): McpServer {
               `guessing at products they might use.`
             : "There's nothing in the catalog yet — say so rather than suggesting products from " +
               "general knowledge.")
-          : `${products.length} recommendation${products.length === 1 ? "" : "s"}` +
-            `${wanted ? ` under "${category}"` : ""}. Each row already carries its own one-liner, ` +
-            `so frame the set in one short line rather than reciting them:\n` +
+          : `Showing ${products.length} of ${matched.length} match${matched.length === 1 ? "" : "es"}` +
+            `${wanted ? ` under "${category}"` : ""} — the strongest picks, not the whole catalog. ` +
+            `Say each one's reason yourself, briefly:\n` +
             products.map((p) => `- ${p.name}${p.brand ? ` (${p.brand})` : ""}` +
               `${p.blurb ? ` — "${p.blurb}"` : ""}`).join("\n");
 

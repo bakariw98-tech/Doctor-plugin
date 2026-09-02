@@ -21,12 +21,14 @@ export const VIEW_OPTIONS: readonly ViewOption[] = ["auto", "card", "spotlight",
 
 /**
  * 'auto' picks the inline layout that fits the result count: 'card' for a
- * single best match, 'spotlight' for two or three, and 'list' — a vertical
- * stack of compact rows, each carrying its own one-liner — once there are
- * enough that the answer has to be scannable rather than narrated. An
- * explicit view always wins, so a caller can force any layout regardless of
- * count (useful for testing/comparing them, and for the widget's own
- * fullscreen -> 'grid' transition).
+ * single best match, 'spotlight' for two or three — same large card,
+ * shown side by side. Every server-side caller now caps at 3 results on
+ * purpose (someone shown a long list doesn't pick, they bounce — see
+ * mcp-server.ts), so 'list' below is a defensive fallback for a count
+ * that shouldn't occur in practice, not a real fourth tier of the normal
+ * flow. An explicit view always wins, so a caller can still force any
+ * layout regardless of count (testing/comparing them, and the widget's
+ * own fullscreen -> 'grid' transition).
  */
 export function resolveView(requested: ViewOption | undefined, resultCount: number): ViewMode {
   if (requested && requested !== "auto") return requested;
