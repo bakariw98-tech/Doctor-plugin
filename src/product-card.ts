@@ -28,7 +28,14 @@
 // "How I use it" is different from both — it's detail someone wants only
 // after they're already interested, so it ships collapsed behind a
 // <details> rather than spent on everyone up front.
+//
+// The one thing here that isn't about the product is the affiliate
+// disclosure. Every Get it is a paid link, so it has to be said; it's drawn
+// once under the whole set rather than on each card, because what's asked
+// for is that it be clear and next to the recommendation — three identical
+// sentences under three tiles is just chrome people learn to skip.
 
+import { creator } from "./creator.js";
 import type { ViewMode } from "./view.js";
 
 /** What the server sends per product. Mirrors WirePick in src/recommend.ts. */
@@ -196,6 +203,14 @@ export function renderProducts(
     return;
   }
 
+  // Set here rather than written into the two stylesheets, which can't read
+  // src/creator.ts. Only when a creator actually configured one: the
+  // built-in accent is a light/dark pair, and one hex overwriting both
+  // would put a colour picked for white onto a dark ground.
+  if (creator.accent) {
+    document.documentElement.style.setProperty("--accent", creator.accent);
+  }
+
   const container = document.createElement("div");
   container.className = CONTAINER_CLASS[view] ?? CONTAINER_CLASS.list;
   const density = DENSITY[view] ?? "list";
@@ -204,4 +219,9 @@ export function renderProducts(
   }
 
   root.appendChild(container);
+
+  const disclosure = document.createElement("p");
+  disclosure.className = "pcard-disclosure";
+  disclosure.textContent = creator.disclosure;
+  root.appendChild(disclosure);
 }

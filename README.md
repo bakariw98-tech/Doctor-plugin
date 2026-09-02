@@ -28,6 +28,12 @@ MCP-Apps-capable host (Claude, ChatGPT, etc.).
 - **It never invents a product, a reason, or a price.** Everything the model
   speaks comes from the catalog. The blurb on each card is the creator's own
   words, written by them in `/admin`, and nothing is generated for them.
+- **Every answer discloses the affiliate relationship.** Every buy link is
+  affiliate-tagged, so the disclosure ships in two places: under the cards in
+  the widget, and inside the tool result, where the model is told to say it.
+  The second one is the one that matters — on a host that doesn't render the
+  widget, the model's reply is the whole answer. Wording is
+  `disclosure` in `src/creator.ts`.
 - **Every unanswered question is recorded.** A question with no good match is
   the most valuable row in the database: it's a product the audience already
   wants and the creator isn't recommending yet. `/admin` surfaces those as a
@@ -35,6 +41,11 @@ MCP-Apps-capable host (Claude, ChatGPT, etc.).
 
 ## How it works
 
+- **`src/creator.ts`** — who this deployment answers as: display name,
+  pronouns, voice, affiliate disclosure, accent, and the slug the widget's
+  `ui://` resource is built from. One deployment serves one creator, so this
+  is checked-in config rather than env vars — see *Cloning it for another
+  creator* below.
 - **`src/mcp-server.ts`** — builds the MCP server. Two tools:
   `recommend_product` (the main one — takes the person's question verbatim,
   returns the pick plus a tracked buy link) and `list_recommendations` (browse
@@ -139,6 +150,32 @@ the widget's CSP allowlist is fixed when the resource is registered and can't
 enumerate every retailer CDN, so a pasted URL from an unlisted host renders
 blank with no error. Routing every photo through one bucket means one origin
 on the allowlist.
+
+## Cloning it for another creator
+
+Each creator gets their own repo, their own Vercel project and their own
+database — there is no tenancy here and there isn't meant to be. To stand up
+the next one: fork the repo, then **edit `src/creator.ts` and nothing else.**
+
+```ts
+export const config: CreatorConfig = {
+  displayName: "Ash",
+  handle: "@ashcooks",
+  pronouns: "they/them",        // she/her · he/him · they/them, or a custom set
+  voice: "You're answering as Ash. Dry, unfussy, allergic to hype.",
+  accent: "#2f6f4e",
+};
+```
+
+Everything else follows: the MCP server and widget names, the `ui://` resource
+URI, the `/admin` header, the affiliate disclosure, the accent on the buy
+button, and every mention of the creator in the two tool descriptions the
+model reads. Pronouns default to they/them and are **never** guessed from the
+name — set them, or the model uses the safe default.
+
+Then give the new deployment its own `DATABASE_URL`, `ADMIN_TOKEN` and
+Supabase storage bucket, and fill the catalog at `/admin`. Nothing about one
+creator's deployment is shared with another's.
 
 ## Deploying to Vercel
 

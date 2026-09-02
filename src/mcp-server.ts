@@ -15,13 +15,16 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { WIDGET_HTML } from "./generated/widget-html.js";
+import { creator, verb } from "./creator.js";
 import { listProducts, logQuestion, type MatchQuality, type Product } from "./db.js";
 import { pickProducts, toWire, trackedBuyUrl } from "./recommend.js";
 import { resolveView, type ViewMode } from "./view.js";
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
 // structure is arbitrary; it just needs to match the tool's outputTemplate.
-export const RESOURCE_URI = "ui://creator-picks/mcp-app.html";
+// Every use of it — both tools' _meta and the registered resource — reads
+// this constant, because a host silently renders nothing when they differ.
+export const RESOURCE_URI = `ui://${creator.slug}/mcp-app.html`;
 
 // The Supabase Storage origin the widget needs on its CSP allowlist to
 // actually load an uploaded product photo — same env var src/storage.ts
@@ -31,6 +34,16 @@ export const RESOURCE_URI = "ui://creator-picks/mcp-app.html";
 function supabaseStorageOrigin(): string | null {
   const url = process.env.SUPABASE_URL?.trim();
   return url ? url.replace(/\/+$/, "") : null;
+}
+
+// Every buy link this app hands out is affiliate-tagged, so the disclosure
+// has to travel with the links rather than living only on the card. On a
+// host that doesn't render MCP-Apps UI — Gemini today, or any client where
+// the widget fails to load — the model's reply IS the whole answer, and a
+// disclosure that only exists in the widget was never made.
+function disclosureInstruction(): string {
+  return `These are affiliate links. Include the disclosure in your reply — "${creator.disclosure}" ` +
+    `— once, plainly, near the recommendation. Your own phrasing is fine; leaving it out is not.`;
 }
 
 function buildResultText(
@@ -44,12 +57,13 @@ function buildResultText(
       `"${question}". Say so plainly — don't suggest a product from general knowledge.`;
   }
 
+  const { displayName: name, pronouns } = creator;
   const lines = products.map((p) => {
     const parts = [`${p.name}${p.brand ? ` (${p.brand})` : ""}`];
-    if (p.blurb) parts.push(`Their words: "${p.blurb}"`);
+    if (p.blurb) parts.push(`${name}'s words: "${p.blurb}"`);
     if (p.audience) parts.push(`Who it's for: ${p.audience}`);
     if (p.problem) parts.push(`What it solves: ${p.problem}`);
-    if (p.usage) parts.push(`How they use it: ${p.usage}`);
+    if (p.usage) parts.push(`How ${pronouns.subject} ${verb("uses", "use")} it: ${p.usage}`);
     if (p.priceNote) parts.push(`Price note: ${p.priceNote}`);
     if (p.promoCode) parts.push(`Promo code: ${p.promoCode}`);
     // The link goes in the TEXT, not just structuredContent. The widget is an
@@ -62,27 +76,30 @@ function buildResultText(
   }).join("\n");
 
   const header = quality === "strong"
-    ? `Their pick for "${question}":`
+    ? `${name}'s pick for "${question}":`
     : quality === "weak"
-      ? `Nothing in the catalog answers "${question}" directly. The closest thing they actually ` +
-        `use is below — offer it as a steer, and say plainly that it isn't quite what was asked for:`
-      : `Nothing in the catalog covers "${question}" at all. Below is what they recommend most ` +
-        `generally — say clearly that they don't have a pick for what was asked, then offer this ` +
-        `as the nearest real thing rather than leaving them with nothing:`;
+      ? `Nothing in the catalog answers "${question}" directly. The closest thing ${name} ` +
+        `actually uses is below — offer it as a steer, and say plainly that it isn't quite what ` +
+        `was asked for:`
+      : `Nothing in the catalog covers "${question}" at all. Below is what ${name} recommends ` +
+        `most generally — say clearly that ${pronouns.subject} ${verb("doesn't", "don't")} have a ` +
+        `pick for what was asked, then offer this as the nearest real thing rather than leaving ` +
+        `them with nothing:`;
 
   return `${header}\n${lines}\n\n` +
     `The card${products.length === 1 ? "" : "s"} show${products.length === 1 ? "s" : ""} the ` +
-    `photo, name, price and a Get it button — not their words. Say the reason yourself, in their ` +
-    `voice, in a sentence or two per pick. "How they use it" is already on the card behind a tap, ` +
-    `so only mention it if it answers what was actually asked. If there's a promo code, say it ` +
-    `aloud as well as it being on the card.\n\nIf the card isn't showing for any reason, include ` +
-    `the buy link in your reply as a plain link — never leave someone with a recommendation and ` +
-    `no way to act on it.`;
+    `photo, name, price and a Get it button — not ${pronouns.possessive} words. Say the reason ` +
+    `yourself, in ${pronouns.possessive} voice, in a sentence or two per pick. "How I use it" is ` +
+    `already on the card behind a tap, so only mention it if it answers what was actually asked. ` +
+    `If there's a promo code, say it aloud as well as it being on the card.\n\nIf the card isn't ` +
+    `showing for any reason, include the buy link in your reply as a plain link — never leave ` +
+    `someone with a recommendation and no way to act on it.\n\n${disclosureInstruction()}`;
 }
 
 export function createMcpServer(): McpServer {
+  const { displayName: name, pronouns } = creator;
   const server = new McpServer({
-    name: "Creator Picks",
+    name: creator.appName,
     version: "1.0.0",
   });
 
@@ -92,45 +109,51 @@ export function createMcpServer(): McpServer {
     {
       title: "Recommend a Product",
       description:
-        "Answers 'what do you use for X' style questions with the creator's own curated product " +
-        "pick and a link to buy it. Use this whenever someone asks what the creator uses, wears, " +
+        `Answers 'what do you use for X' style questions with ${name}'s own curated product ` +
+        `pick and a link to buy it. Use this whenever someone asks what ${name} uses, wears, ` +
         "takes, cooks with, films with, or recommends for a specific job — anything where the " +
         "answer is a thing they can buy.\n\n" +
         "Pass the person's question as they actually asked it. Don't reduce it to a keyword: the " +
-        "raw phrasing is what the creator's gap report is built from, and it's how they learn what " +
-        "their audience wants that they don't yet recommend.\n\n" +
+        `raw phrasing is what ${name}'s gap report is built from, and it's how ${pronouns.subject} ` +
+        `${verb("learns", "learn")} what ${pronouns.possessive} audience wants that ` +
+        `${pronouns.subject} ${verb("doesn't", "don't")} yet recommend.\n\n` +
         "Use it for goal-shaped questions too, not just product ones — \"I'm trying to get into " +
         "cooking more, what should I get\" is this tool with mode 'few', matched against what each " +
-        "product solves. (Browsing a whole category with no particular need — \"what does she " +
-        "recommend for the kitchen\" — is list_recommendations instead.)\n\n" +
+        `product solves. (Browsing a whole category with no particular need — "what ` +
+        `${verb("does", "do")} ${pronouns.subject} recommend for the kitchen" — is ` +
+        "list_recommendations instead.)\n\n" +
+        `${creator.voice}\n\n` +
         "How to speak the result:\n" +
-        "- Answer the way the CREATOR would answer, in their cadence. The person asking already " +
-        "trusts this creator's taste — they came for the answer, not to be sold. It should read " +
-        "like a text back from someone they follow, not a database summary or a product review.\n" +
+        `- Answer the way ${name} would answer, in ${pronouns.possessive} cadence. The person ` +
+        `asking already trusts ${pronouns.possessive} taste — they came for the answer, not to be ` +
+        "sold. It should read like a text back from someone they follow, not a database summary " +
+        "or a product review.\n" +
         "- Keep it short. One or two lines, then stop. No spec sheets, no 'five things to consider " +
         "before buying a knife', no comparison tables nobody asked for.\n" +
-        "- The blurb and the how-they-use-it in the response are the CREATOR'S own words. Present " +
-        "them as theirs, not as your own assessment.\n" +
+        `- The blurb and the usage note in the response are ${name}'s OWN words — present them ` +
+        "as such, not as your own assessment.\n" +
         "- Never invent a product, a reason, a price, or a spec that isn't in the response. If " +
         "someone asks about something the catalog doesn't cover, the response will say so — pass " +
         "that on honestly and offer what's there instead. Don't stretch a weak match into a " +
         "confident recommendation, and equally don't just say 'I don't know' and stop: steer them " +
-        "to something real ('he doesn't have a pan he recommends, but he does swear by this knife " +
-        "for prep').\n" +
+        `to something real ('no pan in ${name}'s picks, but this is the knife ${pronouns.subject} ` +
+        `${verb("uses", "use")} for prep').\n` +
         "- Every pick, one or several, renders as the same large card — photo, name, price, a " +
         "Get it button, and \"how I use it\" behind a tap. Say the reason(s) yourself; the card " +
-        "never prints the blurb. Never more than 3 cards — if the honest answer is 'she has a " +
+        `never prints the blurb. Never more than 3 cards — if the honest answer is '${name} has a ` +
         "dozen kitchen things', name the 3 that best fit what was actually asked, not everything " +
-        "she owns. A promo code shows as a small chip, but say it too rather than assuming they'll " +
-        "spot it.\n" +
+        `${pronouns.subject} ${verb("owns", "own")}. A promo code shows as a small chip, but say ` +
+        "it too rather than assuming they'll spot it.\n" +
+        "- Every buy link is an affiliate link. The response carries the disclosure to say — say " +
+        "it once, in your own words if you like, and never drop it.\n" +
         "- There is no email signup, no free guide, and nothing to collect from the person. The " +
         "recommendation and the buy link are the whole answer.",
       inputSchema: {
         question: z.string().describe(
           "The person's question, in their own words, as close to verbatim as possible — e.g. " +
           "'what knife do you use for everyday cooking' or 'what do you use to stay lean'. Don't " +
-          "compress it to keywords; the exact phrasing is recorded so the creator can see what " +
-          "their audience is asking for.",
+          `compress it to keywords; the exact phrasing is recorded so ${name} can see what ` +
+          `${pronouns.possessive} audience is asking for.`,
         ),
         mode: z.enum(["one", "few"]).optional().describe(
           "'one' (default): the single best pick, shown as one detailed card. 'few': up to 3, " +
@@ -145,8 +168,8 @@ export function createMcpServer(): McpServer {
         ui: { resourceUri: RESOURCE_URI },
         // ChatGPT (Apps SDK) compatibility alias for the same resource link.
         "openai/outputTemplate": RESOURCE_URI,
-        "openai/toolInvocation/invoking": "Looking up what they use…",
-        "openai/toolInvocation/invoked": "Here's their pick.",
+        "openai/toolInvocation/invoking": `Looking up what ${name} uses…`,
+        "openai/toolInvocation/invoked": `Here's ${pronouns.possessive} pick.`,
       },
     },
     async ({ question, mode }) => {
@@ -196,24 +219,25 @@ export function createMcpServer(): McpServer {
     {
       title: "List Recommendations",
       description:
-        "Shows what the creator recommends, optionally narrowed to one category — for browsing " +
-        "questions like 'what does he recommend for the kitchen' or 'what gear does she use', " +
-        "where there's no single specific need to match against. Shows at most 3 — a long list " +
-        "isn't a browsing experience here, it's a wall someone bounces off, so this always picks " +
-        "the 3 to show rather than dumping every match. For a specific question ('what knife do " +
-        "you use'), call recommend_product instead: it picks rather than lists, and it's the one " +
-        "that records what the audience is asking for.",
+        `Shows what ${name} recommends, optionally narrowed to one category — for browsing ` +
+        `questions like 'what ${verb("does", "do")} ${pronouns.subject} recommend for the ` +
+        `kitchen' or 'what gear ${verb("does", "do")} ${pronouns.subject} use', where there's no ` +
+        "single specific need to match against. Shows at most 3 — a long list isn't a browsing " +
+        "experience here, it's a wall someone bounces off, so this always picks the 3 to show " +
+        "rather than dumping every match. For a specific question ('what knife do you use'), " +
+        "call recommend_product instead: it picks rather than lists, and it's the one that " +
+        "records what the audience is asking for.",
       inputSchema: {
         category: z.string().optional().describe(
-          "Optional category filter, matched case-insensitively against the creator's own " +
-          "category labels (e.g. 'kitchen', 'training', 'camera'). Omit to list everything.",
+          `Optional category filter, matched case-insensitively against ${name}'s own category ` +
+          "labels (e.g. 'kitchen', 'training', 'camera'). Omit to list everything.",
         ),
       },
       _meta: {
         ui: { resourceUri: RESOURCE_URI },
         "openai/outputTemplate": RESOURCE_URI,
-        "openai/toolInvocation/invoking": "Pulling up their recommendations…",
-        "openai/toolInvocation/invoked": "Here's what they recommend.",
+        "openai/toolInvocation/invoking": `Pulling up ${pronouns.possessive} recommendations…`,
+        "openai/toolInvocation/invoked": `Here's what ${pronouns.subject} ${verb("recommends", "recommend")}.`,
       },
     },
     async ({ category }) => {
@@ -237,8 +261,8 @@ export function createMcpServer(): McpServer {
 
         const text = products.length === 0
           ? (wanted
-            ? `They don't have anything listed under "${category}". Say so plainly rather than ` +
-              `guessing at products they might use.`
+            ? `${name} doesn't have anything listed under "${category}". Say so plainly rather ` +
+              `than guessing at products ${pronouns.subject} might use.`
             : "There's nothing in the catalog yet — say so rather than suggesting products from " +
               "general knowledge.")
           : `Showing ${products.length} of ${matched.length} match${matched.length === 1 ? "" : "es"}` +
@@ -247,13 +271,14 @@ export function createMcpServer(): McpServer {
             products.map((p) => `- ${p.name}${p.brand ? ` (${p.brand})` : ""}` +
               `${p.blurb ? ` — "${p.blurb}"` : ""}` +
               `${p.promoCode ? ` — Promo code: ${p.promoCode}` : ""}` +
-              ` — Buy link: ${trackedBuyUrl(p.id, null)}`).join("\n");
+              ` — Buy link: ${trackedBuyUrl(p.id, null)}`).join("\n") +
+            `\n\n${disclosureInstruction()}`;
 
         return {
           content: [{ type: "text", text }],
           structuredContent: {
             kind: "products" as const,
-            question: category ? `Recommendations: ${category}` : "Recommendations",
+            question: category ? `${creator.appName}: ${category}` : creator.appName,
             view: resolveView(undefined, products.length),
             matchQuality: "strong" as const,
             products: products.map((p) => toWire(p, null)),
@@ -271,7 +296,7 @@ export function createMcpServer(): McpServer {
 
   registerAppResource(
     server,
-    "Creator Picks",
+    creator.appName,
     RESOURCE_URI,
     { mimeType: RESOURCE_MIME_TYPE },
     async () => {

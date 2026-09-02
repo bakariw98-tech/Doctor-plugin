@@ -11,6 +11,7 @@
 // callback into the server. The only outbound action is opening the buy
 // link, which is why this file needs no serverTools capability at all.
 import { App } from "@modelcontextprotocol/ext-apps";
+import { creator } from "./creator";
 import { renderProducts, type ProductPick } from "./product-card";
 import { resolveView, type ViewMode } from "./view";
 
@@ -27,7 +28,7 @@ const statusEl = document.getElementById("status")!;
 const fullscreenBar = document.getElementById("fullscreen-bar")!;
 const fullscreenToggle = document.getElementById("fullscreen-toggle") as HTMLButtonElement;
 
-const app = new App({ name: "Creator Picks", version: "1.0.0" });
+const app = new App({ name: creator.appName, version: "1.0.0" });
 void app.connect();
 
 let currentProducts: ProductPick[] = [];

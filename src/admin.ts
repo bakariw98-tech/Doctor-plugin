@@ -16,6 +16,7 @@
 // the plain shapes below and back — the actual page logic lives here
 // once, shared by both runtimes, matching how createMcpServer() is
 // shared for the MCP endpoint.
+import { creator } from "./creator.js";
 import {
   listProducts,
   getProduct,
@@ -381,9 +382,9 @@ async function dashboardPage(editId?: number, error?: string): Promise<AdminResp
   return html(
     200,
     page(
-      "Recommendations",
+      creator.appName,
       `
-        <h1>Recommendations</h1>
+        <h1>${escapeHtml(creator.handle ? `${creator.appName} · ${creator.handle}` : creator.appName)}</h1>
         <p class="sub">What your plugin recommends when someone asks what you use.</p>
         ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
         ${drafts > 0 ? `<p class="notice">${drafts} draft${drafts === 1 ? "" : "s"} still ${drafts === 1 ? "needs" : "need"} your line and a publish before ${drafts === 1 ? "it can" : "they can"} be recommended.</p>` : ""}
