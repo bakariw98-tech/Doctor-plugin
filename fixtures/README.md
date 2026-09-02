@@ -18,6 +18,21 @@ point: nothing in a demo video can drift away from the shipping card.
 | `pour-over-spotlight.json` | `spotlight` | three picks side by side |
 | `starter-kit-list.json` | `list` | four picks as scannable rows, each with its own one-liner |
 
+Miss Meat is the first real client, so her fixtures are captured from the
+live deployment rather than invented — these are the ones the first demo
+video is cut from:
+
+| file | view | what it covers |
+| --- | --- | --- |
+| `missmeat-salt-card.json` | `card` | one pick with a promo code — the cleanest hero shot |
+| `missmeat-knives-spotlight.json` | `spotlight` | two picks side by side, no promo codes |
+
+Recapture either with
+`curl '<origin>/api/recommend?q=...' | python3 -m json.tool > fixtures/<name>.json`.
+They point at the live Supabase photo URLs, so a render needs network. If
+you'd rather a shoot never touch the network, inline the photos as `data:`
+URIs first — the card can't tell the difference.
+
 ## Shape
 
 ```json

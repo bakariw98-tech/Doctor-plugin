@@ -1,0 +1,27 @@
+{
+    "question": "what knife does she use",
+    "view": "spotlight",
+    "matchQuality": "strong",
+    "products": [
+        {
+            "id": 21,
+            "name": "NeverDull Premium Knife System (17-Piece)",
+            "imageUrl": "https://wtmafldscpujervjkkps.supabase.co/storage/v1/object/public/product-images/1788346364286-ninjaneverdull.jpg",
+            "priceNote": "~$399.99",
+            "promoCode": null,
+            "blurb": "The bigger version of their knife block \u2014 rust-resistant German stainless steel, built-in sharpener, and Ninja says it stays razor-sharp for 10-plus years. This is the full set if you want everything covered.",
+            "usage": "This is the bigger version of the block I use \u2014 same built-in sharpener, just everything covered if you'd rather buy once.",
+            "buyUrl": "https://doctor-youtube-mcp-app.vercel.app/r/21"
+        },
+        {
+            "id": 20,
+            "name": "NeverDull Knife Block Set (12-Piece)",
+            "imageUrl": "https://wtmafldscpujervjkkps.supabase.co/storage/v1/object/public/product-images/1788346363632-ninjaknifeset.jpg",
+            "priceNote": "~$274.49",
+            "promoCode": null,
+            "blurb": "German stainless steel knives with a built-in sharpener in the block itself \u2014 a few swipes and the edge is back. These are the knives I actually reach for in the kitchen, and they stay sharp for years, not weeks.",
+            "usage": "The sharpener is built into the block, so it happens automatically every time I put a knife away. That's the only reason mine are still sharp.",
+            "buyUrl": "https://doctor-youtube-mcp-app.vercel.app/r/20"
+        }
+    ]
+}

@@ -1,0 +1,17 @@
+{
+    "question": "what do you use for seasoning",
+    "view": "card",
+    "matchQuality": "strong",
+    "products": [
+        {
+            "id": 3,
+            "name": "Salty Provisions Sea Salt",
+            "imageUrl": "https://wtmafldscpujervjkkps.supabase.co/storage/v1/object/public/product-images/1788346353493-salty.jpg",
+            "priceNote": "~$13",
+            "promoCode": "MISSMEAT",
+            "blurb": "This is the salt I actually keep in my kitchen. Hand-harvested Norwegian flaky sea salt, naturally rich in trace minerals, and it's third-party tested for heavy metals and microplastics \u2014 no anti-caking junk, no fillers.",
+            "usage": "It's my everyday finishing salt \u2014 on steak right before it comes off the heat, on eggs, on anything that needs a crunch of salt at the end.",
+            "buyUrl": "https://doctor-youtube-mcp-app.vercel.app/r/3"
+        }
+    ]
+}
