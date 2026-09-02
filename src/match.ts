@@ -31,6 +31,11 @@ const STOPWORDS = new Set([
   "trying", "try", "into", "more", "want", "wants", "wanting", "start",
   "starting", "started", "looking", "look", "need", "needs", "help",
   "something", "anything", "stuff", "thing", "things", "would",
+  // Generic verbs that carry the question but not its subject. "What does
+  // she TAKE for energy" is about energy; leaving "take" in let it match
+  // "people who take it seriously" on a BBQ festival.
+  "take", "takes", "taking", "put", "puts", "keep", "keeps", "make", "makes",
+  "go", "goes", "going", "know", "think", "love", "loves",
 ]);
 
 function tokenize(text: string): string[] {
@@ -49,13 +54,25 @@ function termWeight(idfValue: number, occurrences: number): number {
   return occurrences > 0 ? idfValue * (1 + Math.log(occurrences)) : 0;
 }
 
+// Whole words only. This started life as a transcript searcher where naive
+// substring counting was survivable across thousands of words of speech; over
+// a catalog of short product blurbs it is actively wrong. Found live: "what
+// mic does she use" matched the sunscreen, because "mic" is inside
+// "che-MIC-al filters", and "what does she take for energy" matched a BBQ
+// festival on "take" inside "takes". Both then scored high enough to be
+// presented as real recommendations.
+function countWord(haystackLower: string, term: string): number {
+  // Terms come from tokenize(), so they're [a-z0-9]{3,} — safe to inline.
+  return (haystackLower.match(new RegExp(`\\b${term}\\b`, "g")) ?? []).length;
+}
+
 // IDF against the catalog itself. A term in every product scores near 1x;
 // a term in only one or two scores several times higher.
 function buildIdf(queryTerms: string[], corpus: Record<string, string>): Map<string, number> {
   const docs = Object.values(corpus).map((d) => d.toLowerCase());
   const idf = new Map<string, number>();
   for (const term of queryTerms) {
-    const docFrequency = docs.filter((doc) => doc.includes(term)).length;
+    const docFrequency = docs.filter((doc) => countWord(doc, term) > 0).length;
     idf.set(term, Math.log((docs.length + 1) / (docFrequency + 1)) + 1);
   }
   return idf;
@@ -70,7 +87,7 @@ function weighAgainst(
   let score = 0;
   let matchedIdf = 0;
   for (const term of queryTerms) {
-    const occurrences = lower.split(term).length - 1;
+    const occurrences = countWord(lower, term);
     if (occurrences > 0) {
       score += termWeight(idf.get(term)!, occurrences);
       matchedIdf += idf.get(term)!;
