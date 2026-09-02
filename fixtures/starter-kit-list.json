@@ -1,0 +1,47 @@
+{
+  "question": "what should I buy to get started with espresso at home",
+  "view": "list",
+  "matchQuality": "weak",
+  "products": [
+    {
+      "id": 41,
+      "name": "Meridian M2 Conical Burr Grinder",
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20320%20180%22%20width%3D%22320%22%20height%3D%22180%22%3E%3Crect%20width%3D%22320%22%20height%3D%22180%22%20fill%3D%22%23ffffff%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232b2926%22%20stroke-width%3D%224%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M132%2052h56l-8%2030h-40z%22%20fill%3D%22%23d9d2c7%22%2F%3E%3Crect%20x%3D%22126%22%20y%3D%2282%22%20width%3D%2268%22%20height%3D%2260%22%20rx%3D%228%22%20fill%3D%22%233f3b36%22%2F%3E%3Crect%20x%3D%22138%22%20y%3D%22142%22%20width%3D%2244%22%20height%3D%2214%22%20rx%3D%224%22%20fill%3D%22%23b5541f%22%2F%3E%3Ccircle%20cx%3D%22160%22%20cy%3D%22104%22%20r%3D%2211%22%20fill%3D%22%23efeae2%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+      "priceNote": "$219",
+      "promoCode": "THIRDWAVE10",
+      "blurb": "The grinder I actually kept after testing eleven of them.",
+      "usage": "I leave it on setting 8 for pour over and drop to 3 when I pull espresso. The hopper only ever holds one dose — beans sitting in it overnight is where most of the staleness people blame on their beans actually comes from.",
+      "buyUrl": "https://picks.thirdwaveathome.com/r/41?q=2185"
+    },
+    {
+      "id": 77,
+      "name": "Cobalt 58.5mm Calibrated Tamper",
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20320%20180%22%20width%3D%22320%22%20height%3D%22180%22%3E%3Crect%20width%3D%22320%22%20height%3D%22180%22%20fill%3D%22%23ffffff%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232b2926%22%20stroke-width%3D%224%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%22146%22%20y%3D%2246%22%20width%3D%2228%22%20height%3D%2244%22%20rx%3D%2210%22%20fill%3D%22%237a4a24%22%2F%3E%3Crect%20x%3D%22124%22%20y%3D%2290%22%20width%3D%2272%22%20height%3D%2216%22%20rx%3D%226%22%20fill%3D%22%23c9ccce%22%2F%3E%3Cpath%20d%3D%22M132%20106h56v10a6%206%200%200%201-6%206h-44a6%206%200%200%201-6-6z%22%20fill%3D%22%23c9ccce%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+      "priceNote": "$45",
+      "promoCode": null,
+      "blurb": "Clicks at 30lb so your tamp stops being a variable.",
+      "usage": null,
+      "buyUrl": "https://picks.thirdwaveathome.com/r/77?q=2190"
+    },
+    {
+      "id": 63,
+      "name": "Pace Micro Scale",
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20320%20180%22%20width%3D%22320%22%20height%3D%22180%22%3E%3Crect%20width%3D%22320%22%20height%3D%22180%22%20fill%3D%22%23ffffff%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232b2926%22%20stroke-width%3D%224%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%22104%22%20y%3D%2286%22%20width%3D%22112%22%20height%3D%2234%22%20rx%3D%2210%22%20fill%3D%22%233f3b36%22%2F%3E%3Crect%20x%3D%22118%22%20y%3D%2296%22%20width%3D%2246%22%20height%3D%2216%22%20rx%3D%224%22%20fill%3D%22%23efeae2%22%2F%3E%3Ccircle%20cx%3D%22196%22%20cy%3D%22104%22%20r%3D%228%22%20fill%3D%22%23b5541f%22%2F%3E%3Cpath%20d%3D%22M120%20120v10M200%20120v10%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+      "priceNote": "$68",
+      "promoCode": "THIRDWAVE10",
+      "blurb": "0.1g resolution with a timer, and it survives a wet counter.",
+      "usage": "Tare with the dripper on it, start the timer on the first drop of the bloom, and stop at 2:45. Two numbers and you can repeat any cup you liked.",
+      "buyUrl": "https://picks.thirdwaveathome.com/r/63?q=2185"
+    },
+    {
+      "id": 58,
+      "name": "Halcyon Gooseneck Kettle, 0.9L",
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20320%20180%22%20width%3D%22320%22%20height%3D%22180%22%3E%3Crect%20width%3D%22320%22%20height%3D%22180%22%20fill%3D%22%23ffffff%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232b2926%22%20stroke-width%3D%224%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M120%2096c0-16%2014-28%2034-28s34%2012%2034%2028v28c0%2010-8%2018-18%2018h-32c-10%200-18-8-18-18z%22%20fill%3D%22%23c9ccce%22%2F%3E%3Cpath%20d%3D%22M186%2092c14-2%2020-14%2018-30-1-8-8-12-14-9%22%2F%3E%3Cpath%20d%3D%22M134%2068c0-8%208-14%2020-14s20%206%2020%2014%22%20fill%3D%22%233f3b36%22%2F%3E%3Cpath%20d%3D%22M154%20142h6%22%20stroke%3D%22%23b5541f%22%20stroke-width%3D%228%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+      "priceNote": "$94",
+      "promoCode": null,
+      "blurb": "Holds 96°C without babysitting and pours in a pencil-thin line.",
+      "usage": "Set it to 96°C and start pouring the moment it beeps. The 0.9L body is deliberate: a full litre is heavy enough that your pour wobbles by the third circle.",
+      "buyUrl": "https://picks.thirdwaveathome.com/r/58?q=2185"
+    }
+  ]
+}
