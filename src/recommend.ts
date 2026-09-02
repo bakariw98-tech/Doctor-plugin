@@ -13,6 +13,16 @@ import { listProducts, mostClickedProducts, type MatchQuality, type Product } fr
 // plainly that it isn't quite what they asked for.
 const MATCH_STRONG = 0.6;
 
+// Below this, a "match" is word-collision noise rather than a real steer —
+// one common token shared between a question and an unrelated product. Found
+// live: "what mic does she use" scored the sunscreen, and "what does she take
+// for energy" scored a BBQ festival. Both were technically nonzero, so both
+// came back framed as "the closest thing she actually uses", which is a
+// worse answer than admitting there's no pick. Under the floor we fall
+// through to the same honest path as a zero score: say plainly she has
+// nothing for this, then offer what she's most known for.
+const MATCH_FLOOR = 0.25;
+
 // Where the click-tracking redirect lives. Buy links handed to the widget
 // point here rather than straight at the merchant, so a click can be
 // counted against the question that produced it (api/redirect.ts). Falls
@@ -101,7 +111,7 @@ export async function pickProducts(question: string, maxResults: number): Promis
   const byId = new Map(catalog.map((p) => [String(p.id), p]));
   const matches = findMatches(question, buildCorpus(catalog), maxResults);
 
-  if (matches.length === 0) {
+  if (matches.length === 0 || matches[0].coverage < MATCH_FLOOR) {
     // Nothing matched at all. Steering beats an empty answer, so fall back
     // to what the audience actually buys and let the model be honest about
     // why it's offering it.
