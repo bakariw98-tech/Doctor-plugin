@@ -16,7 +16,7 @@ import {
 import { z } from "zod";
 import { WIDGET_HTML } from "./generated/widget-html.js";
 import { listProducts, logQuestion, type MatchQuality, type Product } from "./db.js";
-import { pickProducts, toWire } from "./recommend.js";
+import { pickProducts, toWire, trackedBuyUrl } from "./recommend.js";
 import { resolveView, type ViewMode } from "./view.js";
 
 // The ui:// scheme tells hosts this is an MCP App resource. The path
@@ -33,7 +33,12 @@ function supabaseStorageOrigin(): string | null {
   return url ? url.replace(/\/+$/, "") : null;
 }
 
-function buildResultText(question: string, quality: MatchQuality, products: Product[]): string {
+function buildResultText(
+  question: string,
+  quality: MatchQuality,
+  products: Product[],
+  questionId: number | null,
+): string {
   if (products.length === 0) {
     return "There's nothing in the catalog yet, so there's no recommendation to give for " +
       `"${question}". Say so plainly — don't suggest a product from general knowledge.`;
@@ -47,6 +52,12 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
     if (p.usage) parts.push(`How they use it: ${p.usage}`);
     if (p.priceNote) parts.push(`Price note: ${p.priceNote}`);
     if (p.promoCode) parts.push(`Promo code: ${p.promoCode}`);
+    // The link goes in the TEXT, not just structuredContent. The widget is an
+    // enhancement, never the delivery mechanism: on any host that doesn't
+    // render MCP-Apps UI — Gemini, a new agent, or Claude/ChatGPT when the
+    // widget fails to load — a payload-only link means the person gets a
+    // recommendation and no way to buy it, which is the entire point gone.
+    parts.push(`Buy link: ${trackedBuyUrl(p.id, questionId)}`);
     return `- ${parts.join(" — ")}`;
   }).join("\n");
 
@@ -64,7 +75,9 @@ function buildResultText(question: string, quality: MatchQuality, products: Prod
     `photo, name, price and a Get it button — not their words. Say the reason yourself, in their ` +
     `voice, in a sentence or two per pick. "How they use it" is already on the card behind a tap, ` +
     `so only mention it if it answers what was actually asked. If there's a promo code, say it ` +
-    `aloud as well as it being on the card.`;
+    `aloud as well as it being on the card.\n\nIf the card isn't showing for any reason, include ` +
+    `the buy link in your reply as a plain link — never leave someone with a recommendation and ` +
+    `no way to act on it.`;
 }
 
 export function createMcpServer(): McpServer {
@@ -158,7 +171,7 @@ export function createMcpServer(): McpServer {
 
         const view: ViewMode = resolveView(undefined, products.length);
         return {
-          content: [{ type: "text", text: buildResultText(question, quality, products) }],
+          content: [{ type: "text", text: buildResultText(question, quality, products, questionId) }],
           structuredContent: {
             kind: "products" as const,
             question,
@@ -232,7 +245,9 @@ export function createMcpServer(): McpServer {
             `${wanted ? ` under "${category}"` : ""} — the strongest picks, not the whole catalog. ` +
             `Say each one's reason yourself, briefly:\n` +
             products.map((p) => `- ${p.name}${p.brand ? ` (${p.brand})` : ""}` +
-              `${p.blurb ? ` — "${p.blurb}"` : ""}`).join("\n");
+              `${p.blurb ? ` — "${p.blurb}"` : ""}` +
+              `${p.promoCode ? ` — Promo code: ${p.promoCode}` : ""}` +
+              ` — Buy link: ${trackedBuyUrl(p.id, null)}`).join("\n");
 
         return {
           content: [{ type: "text", text }],

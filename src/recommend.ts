@@ -36,7 +36,7 @@ function siteOrigin(): string {
   return vercel ? `https://${vercel.replace(/^https?:\/\//, "").replace(/\/+$/, "")}` : "";
 }
 
-function trackedBuyUrl(productId: number, questionId: number | null): string {
+export function trackedBuyUrl(productId: number, questionId: number | null): string {
   const suffix = questionId === null ? "" : `?q=${questionId}`;
   return `${siteOrigin()}/r/${productId}${suffix}`;
 }
