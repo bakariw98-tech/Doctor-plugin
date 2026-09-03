@@ -61,11 +61,25 @@ catalog answers confidently, not one it hedges.
 
 Output lands in `workshop/demos/<slug>/`.
 
-## 3. Film it
+## 3. Shoot it
 
-The fixtures are directly loadable by the demo page's fixture mode. See
-`fixtures/README.md` for the URL form, the Puppeteer/Remotion driving code,
-and the `[data-fixture-ready="1"]` capture signal.
+For a still — usually the better cold-outreach opener, since it renders in
+an email preview pane:
+
+```bash
+npm run build && npm run serve          # in one terminal
+npm i -D playwright                     # once; optional tool, not an app dependency
+node workshop/shoot.mjs workshop/demos/<slug>/<question>.json
+```
+
+It renders through the real widget, so what you send is pixel-for-pixel the
+shipping card. It reports any product photo that failed to load — a broken
+image is the one defect you must never find out about after sending.
+
+For video, the fixtures are directly loadable by the same fixture mode
+Remotion drives. See `fixtures/README.md` for the URL form, the
+Puppeteer/Remotion driving code, and the `[data-fixture-ready="1"]` capture
+signal.
 
 ## Before you send anything
 
