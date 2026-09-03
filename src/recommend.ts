@@ -127,10 +127,23 @@ export async function pickProducts(question: string, maxResults: number): Promis
   const matches = findMatches(question, buildCorpus(catalog), maxResults);
 
   if (matches.length === 0 || matches[0].coverage < MATCH_FLOOR) {
-    // Nothing matched at all. Steering beats an empty answer, so fall back
-    // to what the audience actually buys and let the model be honest about
-    // why it's offering it.
-    return { products: await mostClickedProducts(maxResults), quality: "none" };
+    // Nothing matched well enough to answer with. Steering still beats an
+    // empty answer, but ONE steer — not a filled quota of them.
+    //
+    // This used to return `maxResults` most-clicked products, which meant
+    // every unanswerable question got the same three best-sellers. Found
+    // live: "trying to get lean" answered with Shopify, a storefront
+    // platform, presented alongside two others as what she recommends. Three
+    // unrelated products reads as the catalog dump this product exists to
+    // replace; one reads as a person saying "not that, but maybe this".
+    //
+    // A below-floor match is still topically closer than a global
+    // best-seller — it shares SOME word with the question — so it's the
+    // better steer when one exists. Quality stays "none" either way, so the
+    // model is told to say plainly that there's no real pick for this.
+    const nearest = matches[0] ? byId.get(matches[0].id) : undefined;
+    const products = nearest ? [nearest] : await mostClickedProducts(1);
+    return { products, quality: "none" };
   }
 
   const products = matches.map((m) => byId.get(m.id)).filter((p): p is Product => Boolean(p));

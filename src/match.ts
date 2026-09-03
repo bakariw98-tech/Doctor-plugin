@@ -35,15 +35,58 @@ const STOPWORDS = new Set([
   // she TAKE for energy" is about energy; leaving "take" in let it match
   // "people who take it seriously" on a BBQ festival.
   "take", "takes", "taking", "put", "puts", "keep", "keeps", "make", "makes",
-  "go", "goes", "going", "know", "think", "love", "loves",
+  "go", "goes", "going", "know", "think", "love", "loves", "stay", "stays",
+  "staying",
 ]);
 
+// Suffix stripping, applied to the question and the catalog alike. Without
+// it the matcher is exact-word-only, and found live against a real catalog:
+// "trying to get into grilling" missed a product literally named "Portable
+// Infrared Grill", and "how do i stay hydrated while training" missed an
+// electrolyte mix whose own blurb says "need real hydration" — because
+// grilling !== grill and hydrated !== hydration. Goal-shaped questions are
+// the ones this product exists to answer, and they are exactly the ones
+// phrased in a different inflection from the catalog copy.
+//
+// Deliberately crude rather than a real Porter stemmer: the only thing that
+// matters is that a word and its inflections collapse to the SAME token on
+// both sides, not that the token is a real word ("hydrate" and "hydration"
+// both landing on "hydrat" is a perfect result here). Kept conservative
+// because over-stemming reintroduces the false-positive class this file
+// already fought once — see countTerms below.
+function stem(word: string): string {
+  let w = word;
+  // Plurals before verb endings: "seasonings" -> "seasoning" -> "season".
+  if (w.length > 4 && w.endsWith("ies")) w = w.slice(0, -3) + "y";
+  else if (w.length > 4 && w.endsWith("ves")) w = w.slice(0, -3) + "f";
+  else if (w.length > 4 && w.endsWith("sses")) w = w.slice(0, -2);
+  else if (w.length > 3 && w.endsWith("es") && !w.endsWith("ses")) w = w.slice(0, -2);
+  else if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us")) w = w.slice(0, -1);
+
+  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
+  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
+  else if (w.length > 5 && w.endsWith("ion")) w = w.slice(0, -3);
+  else if (w.length > 4 && w.endsWith("ly")) w = w.slice(0, -2);
+
+  // "running" -> "runn" -> "run". Not for ll/ss/zz, which are real endings
+  // ("grill" must stay "grill", or it collides with "grid"/"grim" stems).
+  if (w.length > 3 && /([bcdfgmnpt])\1$/.test(w)) w = w.slice(0, -1);
+
+  // Trailing "e" last, so "knives" -> "knif" and "knife" -> "knif" meet.
+  if (w.length > 4 && w.endsWith("e")) w = w.slice(0, -1);
+
+  return w;
+}
+
 function tokenize(text: string): string[] {
-  return text
+  const words = text
     .toLowerCase()
     .replace(/['’]/g, "")
     .split(/[^a-z0-9]+/)
+    // Stopwords are listed in their natural form, so they have to be
+    // removed before stemming mangles them.
     .filter((word) => word.length > 2 && !STOPWORDS.has(word));
+  return words.map(stem);
 }
 
 // A term's contribution is idf * log-damped term frequency, not idf * raw
@@ -54,40 +97,50 @@ function termWeight(idfValue: number, occurrences: number): number {
   return occurrences > 0 ? idfValue * (1 + Math.log(occurrences)) : 0;
 }
 
-// Whole words only. This started life as a transcript searcher where naive
-// substring counting was survivable across thousands of words of speech; over
-// a catalog of short product blurbs it is actively wrong. Found live: "what
-// mic does she use" matched the sunscreen, because "mic" is inside
-// "che-MIC-al filters", and "what does she take for energy" matched a BBQ
-// festival on "take" inside "takes". Both then scored high enough to be
-// presented as real recommendations.
-function countWord(haystackLower: string, term: string): number {
-  // Terms come from tokenize(), so they're [a-z0-9]{3,} — safe to inline.
-  return (haystackLower.match(new RegExp(`\\b${term}\\b`, "g")) ?? []).length;
+/**
+ * A document reduced to stem -> occurrence count.
+ *
+ * This replaced a regex-per-term scan of the raw text. That scan could only
+ * ever compare literal words, which is what made stemming impossible: a
+ * stemmed query term ("grill") would no longer match the raw text it came
+ * from ("grilling"). Counting stems on both sides is what lets the two meet.
+ *
+ * It also keeps the fix that scan was built for. Matching used to be naive
+ * substring counting, which found "mic" inside "che-MIC-al filters" and
+ * "take" inside "takes" — both scored high enough to be presented as real
+ * recommendations. Tokens have edges, so that whole class is gone by
+ * construction rather than by careful regex.
+ */
+type DocIndex = Map<string, number>;
+
+function indexDocument(text: string): DocIndex {
+  const counts: DocIndex = new Map();
+  for (const term of tokenize(text)) {
+    counts.set(term, (counts.get(term) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // IDF against the catalog itself. A term in every product scores near 1x;
 // a term in only one or two scores several times higher.
-function buildIdf(queryTerms: string[], corpus: Record<string, string>): Map<string, number> {
-  const docs = Object.values(corpus).map((d) => d.toLowerCase());
+function buildIdf(queryTerms: string[], docs: DocIndex[]): Map<string, number> {
   const idf = new Map<string, number>();
   for (const term of queryTerms) {
-    const docFrequency = docs.filter((doc) => countWord(doc, term) > 0).length;
+    const docFrequency = docs.filter((doc) => doc.has(term)).length;
     idf.set(term, Math.log((docs.length + 1) / (docFrequency + 1)) + 1);
   }
   return idf;
 }
 
 function weighAgainst(
-  text: string,
+  doc: DocIndex,
   queryTerms: string[],
   idf: Map<string, number>,
 ): { score: number; matchedIdf: number } {
-  const lower = text.toLowerCase();
   let score = 0;
   let matchedIdf = 0;
   for (const term of queryTerms) {
-    const occurrences = countWord(lower, term);
+    const occurrences = doc.get(term) ?? 0;
     if (occurrences > 0) {
       score += termWeight(idf.get(term)!, occurrences);
       matchedIdf += idf.get(term)!;
@@ -124,13 +177,14 @@ export function findMatches(
   const queryTerms = [...new Set(tokenize(question))];
   if (queryTerms.length === 0) return [];
 
-  const idf = buildIdf(queryTerms, corpus);
+  const entries = Object.entries(corpus).map(([id, text]) => ({ id, doc: indexDocument(text) }));
+  const idf = buildIdf(queryTerms, entries.map((e) => e.doc));
   const totalIdf = queryTerms.reduce((sum, term) => sum + idf.get(term)!, 0);
   if (totalIdf === 0) return [];
 
   const scored: Match[] = [];
-  for (const [id, text] of Object.entries(corpus)) {
-    const { score, matchedIdf } = weighAgainst(text, queryTerms, idf);
+  for (const { id, doc } of entries) {
+    const { score, matchedIdf } = weighAgainst(doc, queryTerms, idf);
     if (score > 0) scored.push({ id, score, coverage: matchedIdf / totalIdf });
   }
 
