@@ -1,0 +1,29 @@
+{
+  "slug": "",
+  "status": "researching",
+  "identity": {
+    "displayName": "",
+    "handle": "",
+    "pronouns": "they/them",
+    "links": { "primary": "", "youtube": "", "instagram": "", "storefront": "" },
+    "contact": { "email": "", "route": "" }
+  },
+  "authority": {
+    "domain": "",
+    "peopleComeToThemFor": "",
+    "teaching": null,
+    "aspirational": null,
+    "audience": { "size": null, "where": "" },
+    "evidence": []
+  },
+  "monetization": {
+    "affiliates": null,
+    "promoCodes": null,
+    "ownProducts": null,
+    "notes": ""
+  },
+  "askedFor": [],
+  "recommendations": [],
+  "demo": { "fixtures": [], "builtAt": null, "sentAt": null, "deploymentUrl": null },
+  "notes": ""
+}

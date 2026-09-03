@@ -1,0 +1,70 @@
+{
+  "slug": "missmeat",
+  "status": "demo-built",
+  "identity": {
+    "displayName": "Miss Meat",
+    "handle": "@missmeatt",
+    "pronouns": "she/her",
+    "links": {
+      "primary": "https://linktr.ee/Missmeatt",
+      "youtube": "",
+      "instagram": "",
+      "storefront": "https://linktr.ee/Missmeatt"
+    },
+    "contact": { "email": "", "route": "unknown — needs research before outreach" }
+  },
+  "authority": {
+    "domain": "carnivore / high-protein cooking, clean ingredients",
+    "peopleComeToThemFor": "How to cook meat well and eat clean — steak technique, what to season with, which cuts and sources to buy, what to supplement with.",
+    "teaching": true,
+    "aspirational": true,
+    "audience": { "size": null, "where": "Linktree hub; primary platform not yet confirmed" },
+    "evidence": [
+      "Maintains a curated Linktree of 20+ recommendations with her own promo codes — she already monetizes recommendations and brands already work with her.",
+      "Personal promo codes across multiple brands (MISSMEAT, MISS10) indicate negotiated partnerships rather than generic affiliate links."
+    ]
+  },
+  "monetization": {
+    "affiliates": true,
+    "promoCodes": true,
+    "ownProducts": null,
+    "notes": "Codes confirmed on Salty Provisions (MISSMEAT) and SALTR (MISS10). Whether she has her own product line is unconfirmed — worth checking, since doctrine §7 makes creator-owned products the strongest case."
+  },
+  "askedFor": [
+    "what salt do you use",
+    "what knife does she use",
+    "what do you use for seasoning",
+    "trying to get into grilling",
+    "what should i get to start carnivore"
+  ],
+  "recommendations": [
+    { "name": "Salty Provisions Sea Salt", "category": "pantry", "promoCode": "MISSMEAT" },
+    { "name": "SALTR Electrolyte Drink Mix — Hibiscus Lemonade", "category": "supplements", "promoCode": "MISS10" },
+    { "name": "NeverDull Knife Block Set (12-Piece)", "category": "kitchen" },
+    { "name": "NeverDull Premium Knife System (17-Piece)", "category": "kitchen" },
+    { "name": "1500° Portable Infrared Grill", "category": "kitchen" },
+    { "name": "Crispi Pro 6-in-1 Glass Air Fryer", "category": "kitchen" },
+    { "name": "Tastee Sensor Magic Air Fryer", "category": "kitchen" },
+    { "name": "G3P800 Reverse Osmosis System", "category": "kitchen" },
+    { "name": "Equip Prime Protein", "category": "supplements" },
+    { "name": "Pure Collagen", "category": "supplements" },
+    { "name": "Orgain Colostrum Powder", "category": "supplements" },
+    { "name": "Seaonic Marine Minerals", "category": "supplements" },
+    { "name": "Beef Crisps", "category": "snacks" },
+    { "name": "Jack Link's Steak Slices", "category": "snacks" },
+    { "name": "Miller's Bio Farm", "category": "meat" },
+    { "name": "Ranch Sampler Box", "category": "meat" },
+    { "name": "Blue Tansy Deodorant", "category": "beauty" },
+    { "name": "Vanilla + Citrus Deodorant", "category": "beauty" },
+    { "name": "Face & Body Sunscreen SPF 50", "category": "beauty" },
+    { "name": "Meatstock", "category": "events" },
+    { "name": "Shopify", "category": "tools" }
+  ],
+  "demo": {
+    "fixtures": ["fixtures/missmeat-salt-card.json", "fixtures/missmeat-knives-spotlight.json"],
+    "builtAt": "2026-09-03",
+    "sentAt": null,
+    "deploymentUrl": "https://doctor-youtube-mcp-app.vercel.app"
+  },
+  "notes": "Prospect #1, and the exception to the normal flow: her demo is not a mockup but a fully live deployment with all 21 real recommendations, real photos and real promo codes. Not contacted yet. Before outreach: find a contact route, and swap the 17-piece knife photo (currently NeverDull's marketing collage, not a clean product shot — it is the weakest frame in the spotlight demo)."
+}
